@@ -30,6 +30,7 @@ env/
 .vscode/
 *.swp
 *.swo
+*.code-workspace
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -40,4 +41,9 @@ results/
 *.pkl
 
 # Logs
-*.log 
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini 
