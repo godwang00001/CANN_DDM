@@ -6,96 +6,8 @@ from jax import lax
 from scipy.linalg import circulant
 import scipy
 from tqdm import tqdm 
-from jaxopt import Bisection, GaussNewton, Broyden
+from jaxopt import Bisection, GaussNewton
 path_dir = '/Users/wangchenyu/research/CANN/CANN_diffusion_model/'
-
-def get_DDM_simulation(v, sig_W, dur1, dur2, dt_DDM, dt=1, seed=None):
-  """
-  Generate synthetic evidence variable from 2-alternatives
-  dur1: time duration before the trial began
-  dur2: time duration for the DDM simulation
-  """
-  if seed is not None:
-    bm.random.seed(seed)
-  l =  bm.sqrt(sig_W**2 * dt_DDM/1e3 + (v*dt_DDM/1e3)**2)
-  num1 = int(dur1 / dt_DDM) # number of steps we want to roll the dice
-  num2 = int(dur2 / dt_DDM)
-  p_right = 1/2 * (1 + v * (dt_DDM/1e3)/l)
-  p_left = 1 - p_right
-  clicks_left = bm.random.binomial(1, p_left, num1+num2)
-  clicks_left[:num1] = 0
-  clicks_right = 1 - clicks_left
-  clicks_right[:num1] = 0
-  clicks_left = bm.repeat(clicks_left, int(dt_DDM / dt))
-  clicks_right = bm.repeat(clicks_right, int(dt_DDM / dt))
-  return clicks_left, clicks_right, l, p_right
-
-
-def get_RT(pos, boundary, dt):
-    """
-    Calculate the reaction times (RT) for each trial using vectorized NumPy operations.
-    
-    Parameters:
-        pos: Array of shape (N, T) where each row represents a trial with a continuous variable over time.
-        boundary: A positive boundary value. The function checks if values exceed +boundary or -boundary.
-        dt: Time unit interval.
-    
-    Returns:
-        Two arrays:
-            - pos_RT: Reaction times for trials that first crossed the positive boundary.
-            - neg_RT: Reaction times for trials that first crossed the negative boundary.
-    """
-    # Create a boolean mask marking time points where the absolute value exceeds the boundary.
-    mask = np.abs(pos) >= boundary  # shape (N, T)
-    
-    # For each trial, find the index of the first occurrence where the boundary is crossed.
-    # Note: For trials without any True, np.argmax returns 0, so we need to validate.
-    first_idx = np.argmax(mask, axis=1)  # shape (N,)
-    
-    # Verify for each trial at first_idx whether the condition is truly met.
-    valid = mask[np.arange(pos.shape[0]), first_idx]  # shape (N,)
-    
-    # Identify valid trials where the boundary was indeed crossed.
-    valid_trials = np.where(valid)[0]
-    crossing_idx = first_idx[valid_trials]
-    
-    # Compute reaction times using the valid indices.
-    rt = crossing_idx * dt
-    
-    # Determine whether the crossing was at the positive or negative boundary.
-    crossing_values = pos[valid_trials, crossing_idx]
-    pos_mask = crossing_values >= boundary  # True if crossed positive boundary
-    
-    pos_RT = rt[pos_mask]
-    neg_RT = rt[~pos_mask]
-    
-    return pos_RT, neg_RT
-  
-  
-
-def run_CANN_simulation(model, clicks_left, clicks_right, dur1, dur2, mon_vars, dt=1, progress_bar=True):
-  assert np.shape(clicks_left) == np.shape(clicks_right), "Evidence vectors must have the same length."
-  assert len(clicks_left) == int((dur1 + dur2) / dt), "Evidence length should be equal to the simulatin duration."
-  I1 = 0.1 * model.get_stimulus_by_pos(0)
-  Iext, duration = bp.inputs.section_input(values=[I1, 0], durations=[dur1/10, dur2/10], return_length=True)
-  runner=bp.DSRunner(model, inputs=[('input', Iext, 'iter'), ('clicks_left', clicks_left,'iter', '='), ('clicks_right', clicks_right,'iter', '=')],
-                  monitors=mon_vars, dyn_vars=model.vars(), progress_bar=progress_bar, dt=dt)
-  runner.run(dur1+dur2)
-  return runner
-
-
-def run_CANN_simulation_two_edges(model, clicks_left, clicks_right, dur1, dur2, mon_vars, dt=1, progress_bar=True):
-  assert np.shape(clicks_left) == np.shape(clicks_right), "Evidence vectors must have the same length."
-  assert len(clicks_left) == int((dur1 + dur2) / dt), "Evidence length should be equal to the simulatin duration."
-  I1 = 0.1 * model.get_stimulus_by_pos(0)
-  Iext1, duration = bp.inputs.section_input(values=[I1, 0], durations=[dur1/10, dur2/10], return_length=True)
-  Iext2 = Iext1.copy()
-  runner=bp.DSRunner(model, inputs=[('input1', Iext1, 'iter'), ('input2', Iext2, 'iter'), ('clicks_left', clicks_left,'iter', '='), ('clicks_right', clicks_right,'iter', '=')],
-                  monitors=mon_vars, dyn_vars=model.vars(), progress_bar=progress_bar, dt=dt)
-  runner.run(dur1+dur2)
-  return runner
-
-
 
 
 class CANN_DDM_base_model(bp.dyn.NeuDyn):
@@ -301,6 +213,8 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
       self.if_edge_hit = bm.Variable(bm.bool(False))
       self.RT = bm.Variable(bm.inf)
       self.first_hit = bm.Variable(bm.bool(False))
+      self.dx = 
+      self.x_pred = bm.Variable(bm.zeros(1)) # theoretical prediction of the decision variable
 
 
   def init_edge_pop(self, edge_type, edge_offset, optimize_offset, 
@@ -458,10 +372,10 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
   def update(self, x=None):
     _t = bp.share['t']
     # Compute the new hit condition
-    if_bump_hit= bm.where(bm.sign(self.u_pos) * self.u_pos < self.boundary-0.05, bm.bool(False), bm.bool(True))
+    if_bump_hit= bm.where(bm.sign(self.u_pos) * self.u_pos < self.boundary, bm.bool(False), bm.bool(True))
     if_edge_hit= bm.where(bm.sign(self.s_pos) * self.s_pos < self.boundary, bm.bool(False), bm.bool(True))
     # Once hit is True, keep it True for subsequent updates
-    self.first_hit = bm.logical_and(if_edge_hit, bm.logical_not(self.if_edge_hit))
+    self.first_hit = bm.logical_and(if_bump_hit, bm.logical_not(self.if_bump_hit))
     self.RT = bm.where(self.first_hit, _t-self.t_prep, self.RT)
     self.if_bump_hit = bm.logical_or(self.if_bump_hit, if_bump_hit)
     self.if_edge_hit = bm.logical_or(self.if_edge_hit, if_edge_hit)
@@ -476,7 +390,7 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
     #Ius = bm.where(_t<self.t_prep, 0, self.c1 * Ius)
     self.c1_dyn[:] = self.c1 * self.alpha ** (-3*(self.boundary-bm.abs(self.u_pos)))
     self.c2_dyn[:] = self.c2
-    self.Ius[:] = bm.where(bm.logical_or(self.if_edge_hit, _t < self.t_prep), 0, self.c1_dyn * Ius)
+    self.Ius[:] = bm.where(bm.logical_or(self.if_bump_hit, _t < self.t_prep), 0, self.c1_dyn * Ius)
 
 
     #Ishift = self.c2*(self.clicks_left * self.conn_left @ self.r + self.clicks_right * self.conn_right @ self.r)
@@ -486,7 +400,8 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
     #self.Ishift[:] = bm.where(_t<self.t_prep, 0, Ishift)
     self.Ishift[:] = bm.where(bm.logical_or(self.if_bump_hit, _t < self.t_prep), 0, Ishift)
     #self.I_pause[:] = bm.where(bm.sign(self.u_pos) * self.u_pos < self.boundary, 0, -10)
-    self.I_pause[:] = bm.where(self.if_edge_hit, -10, 0)
+    self.I_pause[:] = bm.where(self.if_bump_hit, -10, 0)
+    self.x_pred[:] = bm.where(self.clicks_right, self.x_pred+self.delta_z, self.x_pred-self.delta_z)
     u, v, s = self.integral(self.u, self.v, self.s, _t, self.input)
     self.u[:] = bm.where(u>0, u, 0)
     self.v[:] = v 
@@ -640,3 +555,4 @@ class CANN_DDM_bump_edge_model_v2(CANN_DDM_bump_edge_model):
     
     self.input1[:] = 0.
     self.input2[:] = 0.
+

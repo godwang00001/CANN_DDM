@@ -1,260 +1,441 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from CANN_DDM_models import get_DDM_simulation, get_RT, run_CANN_simulation, CANN_DDM_bump_edge_model
+import brainpy as bp
+import brainpy.math as bm
+from CANN_DDM_models import CANN_DDM_bump_edge_model
 from tqdm import tqdm
-from brainpy import math as bm
 import gc
 import os
+from scipy import stats
+import jax
+from jax import clear_caches
+import psutil
 
-def simulate_network(DDM_params=None, CANN_params=None, num_trials=500):
-    """
-    Simulate network behavior and collect response times for correct and incorrect responses.
-    
-    Parameters:
-    -----------
-    DDM_params : dict, optional
-        Parameters for the DDM model
-    CANN_params : dict, optional
-        Parameters for the CANN model
-    num_trials : int, optional
-        Number of trials to simulate
+class NetworkSimulator:
+    def __init__(self, DDM_params=None, CANN_params=None, mon_vars=None, save_runner=False):
+        default_DDM_params = {
+            'dt': 1.,
+            'dt_DDM': 10.,
+            'v': 0.5,
+            'sig_W': .5,
+            'boundary': .8,
+        }
+
+        default_CANN_params = {
+            'dur1': 500,
+            'dur2': 4000,
+            'edge_type': 'tanh',
+            'num': 1024,
+            'tau_bump': 0.1,
+            'tau_edge': 1,
+            'beta': 2,
+            'offset': 3.85,
+            'delta_z': 1/40,
+            'J0_bump': 4,
+            'J0_edge': 1,
+            'a': 0.25,
+            'A': 10,
+            'c2': 1
+        }
+        default_mon_vars = ['u_pos', 'RT']
+
+        self.DDM_params = {**default_DDM_params, **(DDM_params or {})}
+        self.CANN_params = {**default_CANN_params, **(CANN_params or {})}
+        self.mon_vars = list(set(default_mon_vars) | set(mon_vars if mon_vars is not None else default_mon_vars))
+        if 'c1' in self.CANN_params.keys():
+            self.c1_fit = self.CANN_params['c1']
+        else:
+            print("c1 not found in CANN_params, finding optimal c1")
+            print("-" * 50)
+            self.c1_fit, _ = self.find_optimal_c1()
+            print(f"c1: {self.c1_fit}")
+        self.save_runner = save_runner
+        if save_runner:
+            self.runners_log = dict()
+     
+
+
+    def _force_memory_cleanup(self, aggressive=True):
+        """
+        Aggressive memory cleanup function
+        """
+        import gc
+        import sys
+        import ctypes
         
-    Returns:
-    --------
-    tuple
-        Arrays of response times for correct and incorrect responses
-    """
-    default_DDM_params = {
-        'dt': 1.,
-        'dt_DDM': 10.,
-        'v': 0.5,
-        'sig_W': .5,
-        'boundary': .8,
-    }
-
-    default_CANN_params = {
-        'dur1': 500,
-        'dur2': 4000,
-        'edge_type': 'tanh',
-        'num': 1024,
-        'tau_bump': 0.1,
-        'tau_edge': 1,
-        'beta': 2,
-        'offset': 3.85,
-        'delta_z': 1/40,
-        'J0_bump': 4,
-        'J0_edge': 1,
-        'a': 0.25,
-        'A': 10,
-        'c2': 1
-    }
-
-    DDM_params = {**default_DDM_params, **(DDM_params or {})}
-    CANN_params = {**default_CANN_params, **(CANN_params or {})}
-
-    # read DDM parameters
-    dt = DDM_params['dt']
-    dt_DDM = DDM_params['dt_DDM']
-    v = DDM_params['v']
-    sig_W = DDM_params['sig_W']
-    boundary = DDM_params['boundary']
-    du = np.sqrt(sig_W**2 * dt_DDM + (v * dt_DDM)**2)
-    v_sim = du / dt
-
-    # read CANN parameters
-    dur1 = CANN_params['dur1']
-    dur2 = CANN_params['dur2']
-    t_prep = dur1 + 0.1 * dur2
-    edge_type = CANN_params['edge_type']
-    num = CANN_params['num']
-    tau_bump = CANN_params['tau_bump']
-    tau_edge = CANN_params['tau_edge']
-    beta = CANN_params['beta']
-    offset = CANN_params['offset']
-    delta_z = CANN_params['delta_z']
-    J0_bump = CANN_params['J0_bump']
-    J0_edge = CANN_params['J0_edge']
-    a = CANN_params['a']
-    A = CANN_params['A']
-    c2 = CANN_params['c2']
-    
-    # find the theoretical c1 given the drift rate v
-    c1_pred = lambda sigma, v, bump_height: v * sigma / bump_height
-    c1_fit = c1_pred(.5/beta, v_sim, bump_height=0.57)
-    RT_corr = []
-    RT_incorr = []
-
-    for seed in tqdm(np.arange(num_trials)):
-        seed = int(seed)
-        clicks_left, clicks_right, l, p = get_DDM_simulation(v, sig_W, dur1, dur2, dt_DDM, dt=dt, seed=seed)
-        my_model = CANN_DDM_bump_edge_model(num=num, c1=c1_fit, c2=c2, J0_bump=J0_bump,
-                                        tau_bump = tau_bump,
-                                        J0_edge=J0_edge, edge_offset=offset,
-                                        optimize_offset=False,
-                                        t_prep = t_prep, a=a, A=A,
-                                        beta=beta, edge_type=edge_type, delta_z=delta_z, seed=seed, boundary=boundary)
-        mon_vars=['u','v', 's' ,'Ishift', 'u_pos', 'u_dpos', 's_pos', 'Ius', 'RT', 'first_hit', 'if_bump_hit', 'if_edge_hit']
-        runner = run_CANN_simulation(my_model, clicks_left, clicks_right, dur1, dur2, mon_vars, dt=dt, progress_bar=False)
-        my_model.reset_state()
-        if runner.mon.RT[-1] != bm.inf:
-            if bm.sign(runner.mon.u_pos[-1]) == bm.sign(v):
-                RT_corr.append(runner.mon.RT[-1])
-            else:
-                RT_incorr.append(runner.mon.RT[-1])
-        del my_model, runner, clicks_left, clicks_right, l, p
-        gc.collect()
-    return np.array(RT_corr), np.array(RT_incorr)
-
-def plot_RT_distribution(v=1, sig_W=1, B=1, dt=0.001, dt_dice=0.01, n_trials=500, seed=2025, max_steps=1000, pos_RT=None, neg_RT=None):
-    """
-    Plot reaction time (RT) distributions for positive and negative responses.
-    
-    Parameters:
-    -----------
-    v : float, optional
-        Drift rate
-    sig_W : float, optional
-        Diffusion coefficient
-    B : float, optional
-        Boundary value
-    dt : float, optional
-        Time step for potential simulation
-    dt_dice : float, optional
-        Time step for dice-roll simulation
-    n_trials : int, optional
-        Number of trials to simulate
-    seed : int, optional
-        Random seed
-    max_steps : int, optional
-        Maximum number of steps per trial
-    pos_RT : array_like, optional
-        Reaction times for positive boundary hits
-    neg_RT : array_like, optional
-        Reaction times for negative boundary hits
-    """
-    np.random.seed(seed)
-    bins = np.arange(0, max_steps * dt, dt_dice*10)
-    
-    # Discrete Dice-Roll Simulation
-    dl = np.sqrt(sig_W**2 * dt_dice + (v * dt_dice)**2)
-    p = 0.5 * (1 + (v * dt_dice) / dl)
-    print(f"Discrete simulation parameters: step length dl = {dl:.5f}, probability p = {p:.5f}")
-    
-    pos_RT_dice = []
-    neg_RT_dice = []
-    
-    for trial in range(n_trials):
-        x = 0.0
-        t = 0.0
-        hit_boundary = False
-        for step in range(max_steps):
-            t += dt_dice
-            if np.random.rand() < p:
-                x += dl
-            else:
-                x -= dl
-            if x >= B:
-                pos_RT_dice.append(t)
-                hit_boundary = True
-                break
-            elif x <= -B:
-                neg_RT_dice.append(t)
-                hit_boundary = True
-                break
-        if not hit_boundary:
-            pos_RT_dice.append(np.nan)
-            neg_RT_dice.append(np.nan)
+        # Multiple rounds of garbage collection
+        for _ in range(5 if aggressive else 3):
+            gc.collect()
             
-    pos_RT_dice = np.array(pos_RT_dice)
-    neg_RT_dice = np.array(neg_RT_dice)
-    
-    def compute_ecdf(data):
-        data = data[~np.isnan(data)]
-        sorted_data = np.sort(data)
-        n = sorted_data.size
-        ecdf = np.arange(1, n + 1) / n
-        return sorted_data, ecdf
-    
-    pos_x, pos_ecdf = compute_ecdf(pos_RT_dice)
-    neg_x, neg_ecdf = compute_ecdf(neg_RT_dice)
-    
-    if pos_RT is not None:
-        pos_x_extra, pos_ecdf_extra = compute_ecdf(np.array(pos_RT))
-    if neg_RT is not None:
-        neg_x_extra, neg_ecdf_extra = compute_ecdf(np.array(neg_RT))
-    
-    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
-    
-    # Positive Boundary plots
-    ax = axs[0, 0]
-    ax.hist(pos_RT_dice, bins=bins, density=True, alpha=0.5, label="Positive RT (Dice Simulation)")
-    if pos_RT is not None:
-        ax.hist(pos_RT, bins=bins, density=True, alpha=0.5, label="Positive RT")
-    ax.set_xlabel("Reaction Time (s)")
-    ax.set_ylabel("Probability Density")
-    ax.set_title("Positive Boundary Reaction Time Histogram")
-    ax.legend()
-    
-    ax = axs[0, 1]
-    ax.step(pos_x, pos_ecdf, where='post', label="Positive RT (Dice Simulation)")
-    if pos_RT is not None:
-        ax.step(pos_x_extra, pos_ecdf_extra, where='post', label="Positive RT")
-    ax.set_xlabel("Reaction Time (s)")
-    ax.set_ylabel("Cumulative Probability")
-    ax.set_title("Positive Boundary Reaction Time Empirical CDF")
-    ax.legend()
-    
-    # Negative Boundary plots
-    ax = axs[1, 0]
-    ax.hist(neg_RT_dice, bins=bins, density=True, alpha=0.5, label="Negative RT (Dice Simulation)")
-    if neg_RT is not None:
-        ax.hist(neg_RT, bins=bins, density=True, alpha=0.5, label="Negative RT")
-    ax.set_xlabel("Reaction Time (s)")
-    ax.set_ylabel("Probability Density")
-    ax.set_title("Negative Boundary Reaction Time Histogram")
-    ax.legend()
-    
-    ax = axs[1, 1]
-    ax.step(neg_x, neg_ecdf, where='post', label="Negative RT (Dice Simulation)")
-    if neg_RT is not None:
-        ax.step(neg_x_extra, neg_ecdf_extra, where='post', label="Negative RT")
-    ax.set_xlabel("Reaction Time (s)")
-    ax.set_ylabel("Cumulative Probability")
-    ax.set_title("Negative Boundary Reaction Time Empirical CDF")
-    ax.legend()
-    
-    plt.tight_layout()
-    plt.show()
-    return pos_RT_dice, neg_RT_dice
+        # Clear JAX
+        clear_caches()
+        jax.clear_backends()
+        
+        # Clear BrainPy caches
+        if hasattr(bm, 'clear_cache'):
+            bm.clear_cache()
+        if hasattr(bp, 'clear_cache'):
+            bp.clear_cache()
+            
+        # Clear Python's internal caches
+        if hasattr(sys, 'intern'):
+            sys.intern.clear() if hasattr(sys.intern, 'clear') else None
+            
+        # Force memory compaction on supported systems
+        if aggressive and hasattr(ctypes, 'windll'):
+            # Windows specific memory cleanup
+            try:
+                ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1, -1)
+            except:
+                pass
+        elif aggressive:
+            # Unix-like systems
+            try:
+                import mmap
+                # Try to hint the OS to free memory
+                pass
+            except:
+                pass
+                
+        # Final garbage collection
+        gc.collect()
 
-def run_and_save_simulation(num_trials=500, save_dir='results'):
-    """
-    Run network simulation and save results.
-    
-    Parameters:
-    -----------
-    num_trials : int, optional
-        Number of trials to simulate
-    save_dir : str, optional
-        Directory to save results
-    """
-    # Create save directory if it doesn't exist
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    
-    # Run simulation
-    RT_corr, RT_incorr = simulate_network(num_trials=num_trials)
-    
-    # Save results
-    np.save(os.path.join(save_dir, 'RT_corr.npy'), RT_corr)
-    np.save(os.path.join(save_dir, 'RT_incorr.npy'), RT_incorr)
-    
-    # Plot and save distributions
-    plot_RT_distribution(pos_RT=RT_corr, neg_RT=RT_incorr)
-    plt.savefig(os.path.join(save_dir, 'rt_distributions.png'))
-    
-    return RT_corr, RT_incorr
+    def generate_evidence_variable(self, seed=None):
+        v = self.DDM_params['v']
+        sig_W = self.DDM_params['sig_W']
+        dur1 = self.CANN_params['dur1']
+        dur2 = self.CANN_params['dur2']
+        dt_DDM = self.DDM_params['dt_DDM']
+        dt = self.DDM_params['dt']
 
-if __name__ == "__main__":
-    # Example usage
-    RT_corr, RT_incorr = run_and_save_simulation(num_trials=500) 
+        if seed is not None:
+            bm.random.seed(seed)
+        l =  bm.sqrt(sig_W**2 * dt_DDM/1e3 + (v*dt_DDM/1e3)**2)
+        num1 = int(dur1 / dt_DDM) 
+        num2 = int(dur2 / dt_DDM)
+        p_right = 1/2 * (1 + v * (dt_DDM/1e3)/l)
+        p_left = 1 - p_right
+        clicks_left = bm.random.binomial(1, p_left, num1+num2)
+        clicks_left[:num1] = 0
+        clicks_right = 1 - clicks_left
+        clicks_right[:num1] = 0
+        clicks_left = bm.repeat(clicks_left, int(dt_DDM / dt))
+        clicks_right = bm.repeat(clicks_right, int(dt_DDM / dt))
+        return clicks_left, clicks_right, l, p_right
+
+
+    def run_CANN_simulation(self, model, mon_vars, progress_bar=True):
+      clicks_left, clicks_right, _, _ = self.generate_evidence_variable()
+      dur1 = self.CANN_params['dur1']
+      dur2 = self.CANN_params['dur2']
+      dt = self.DDM_params['dt']
+      assert np.shape(clicks_left) == np.shape(clicks_right), "Evidence vectors must have the same length."
+      assert len(clicks_left) == int((dur1 + dur2) / dt), "Evidence length should be equal to the simulatin duration."
+      I1 = 0.1 * model.get_stimulus_by_pos(0)
+      Iext, duration = bp.inputs.section_input(values=[I1, 0], durations=[dur1/10, dur2/10], return_length=True)
+      runner=bp.DSRunner(model, inputs=[('input', Iext, 'iter'), ('clicks_left', clicks_left,'iter', '='), ('clicks_right', clicks_right,'iter', '=')],
+                      monitors=mon_vars, dyn_vars=model.vars(), progress_bar=progress_bar, dt=dt)
+      runner.run(dur1+dur2)
+      return runner
+
+    def run_CANN_simulation_two_edges(self, model, mon_vars, progress_bar=True):
+      clicks_left, clicks_right, _, _ = self.generate_evidence_variable()
+      dur1 = self.CANN_params['dur1']
+      dur2 = self.CANN_params['dur2']
+      dt = self.DDM_params['dt']
+      assert np.shape(clicks_left) == np.shape(clicks_right), "Evidence vectors must have the same length."
+      assert len(clicks_left) == int((dur1 + dur2) / dt), "Evidence length should be equal to the simulatin duration."
+      I1 = 0.1 * model.get_stimulus_by_pos(0)
+      Iext1, duration = bp.inputs.section_input(values=[I1, 0], durations=[dur1/10, dur2/10], return_length=True)
+      Iext2 = Iext1.copy()
+      runner=bp.DSRunner(model, inputs=[('input1', Iext1, 'iter'), ('input2', Iext2, 'iter'), ('clicks_left', clicks_left,'iter', '='), ('clicks_right', clicks_right,'iter', '=')],
+                      monitors=mon_vars, dyn_vars=model.vars(), progress_bar=progress_bar, dt=dt)
+      runner.run(dur1+dur2)
+      return runner
+
+    def _check_memory_usage(self, threshold_mb=8000):
+        """
+        Check current memory usage and return True if above threshold
+        """
+        process = psutil.Process(os.getpid())
+        current_mem = process.memory_info().rss / 1024**2  # in MiB
+        return current_mem > threshold_mb, current_mem
+
+    def simulate_network(self, num_trials=500, batch_size=5, save_dir=None, memory_threshold=8000):
+        import weakref
+        
+        dt = self.DDM_params['dt']
+        v = self.DDM_params['v']
+        boundary = self.DDM_params['boundary']
+        
+        dur1 = self.CANN_params['dur1']
+        dur2 = self.CANN_params['dur2']
+        t_prep = dur1 + 0.1 * dur2
+        edge_type = self.CANN_params['edge_type']
+        num = self.CANN_params['num']
+        tau_bump = self.CANN_params['tau_bump']
+        tau_edge = self.CANN_params['tau_edge']
+        beta = self.CANN_params['beta']
+        offset = self.CANN_params['offset']
+        delta_z = self.CANN_params['delta_z']
+        J0_bump = self.CANN_params['J0_bump']
+        J0_edge = self.CANN_params['J0_edge']
+        a = self.CANN_params['a']
+        A = self.CANN_params['A']
+        c2 = self.CANN_params['c2']
+
+        RT_corr = []
+        RT_incorr = []
+        runners = dict()
+        total_batches = (num_trials + batch_size - 1) // batch_size
+        
+        print(f"\nStarting simulation with {num_trials} trials in {total_batches} batches of size {batch_size}")
+        print(f"Memory threshold set to: {memory_threshold} MiB")
+        print("=" * 50)
+        
+        for batch_idx in range(total_batches):
+            batch_start = batch_idx * batch_size
+            batch_end = min(batch_start + batch_size, num_trials)
+            batch_RT_corr = []
+            batch_RT_incorr = []
+            
+            print(f"\nProcessing Batch {batch_idx + 1}/{total_batches} (Trials {batch_start + 1}-{batch_end})")
+            print("-" * 50)
+            
+            for seed_val in tqdm(range(batch_start, batch_end), 
+                            desc=f"Trials in batch {batch_idx + 1}",
+                            ncols=80):
+                
+                # Pre-trial memory check and cleanup
+                high_mem, current_mem = self._check_memory_usage(memory_threshold)
+                if high_mem:
+                    print(f"\nWarning: High memory usage detected ({current_mem:.1f} MiB). Forcing cleanup...")
+                    self._force_memory_cleanup(aggressive=True)
+                else:
+                    self._force_memory_cleanup(aggressive=False)
+                
+                seed_val = int(seed_val)
+                clicks_left, clicks_right, _, _ = self.generate_evidence_variable(seed=seed_val)
+                
+                my_model = CANN_DDM_bump_edge_model(num=num, c1=self.c1_fit, c2=c2, J0_bump=J0_bump,
+                                                tau_bump=tau_bump,
+                                                tau_edge=tau_edge,
+                                                J0_edge=J0_edge, edge_offset=offset,
+                                                optimize_offset=False,
+                                                t_prep=t_prep, a=a, A=A,
+                                                beta=beta, edge_type=edge_type, delta_z=delta_z, 
+                                                seed=seed_val, boundary=boundary)
+            
+                runner = self.run_CANN_simulation(my_model, self.mon_vars, progress_bar=False)
+                
+                if runner.mon.RT[-1] != bm.inf:
+                    rt_val = float(runner.mon.RT[-1])
+                    u_pos_val = float(runner.mon.u_pos[-1])
+                    if bm.sign(u_pos_val) == bm.sign(v):
+                        batch_RT_corr.append(rt_val)
+                    else:
+                        batch_RT_incorr.append(rt_val)
+                
+                # Comprehensive memory cleanup
+                # Clear monitor data
+                if hasattr(runner, 'mon'):
+                    for key in list(runner.mon.__dict__.keys()):
+                        if hasattr(runner.mon.__dict__[key], '__del__'):
+                            delattr(runner.mon, key)
+                        
+                # Clear model internals
+                if hasattr(my_model, 'clear_cache'):
+                    my_model.clear_cache()
+                if hasattr(my_model, 'reset_state'):
+                    my_model.reset_state()
+                    
+                # Explicit deletion of large objects
+                del clicks_left, clicks_right
+                del my_model
+                if self.save_runner:
+                    self.runners_log[seed_val] = runner
+                else:
+                    del runner
+                # Force aggressive memory cleanup
+                self._force_memory_cleanup(aggressive=True)
+            
+            print(f"\nBatch {batch_idx + 1} completed:")
+            print(f"Correct responses: {len(batch_RT_corr)}")
+            print(f"Incorrect responses: {len(batch_RT_incorr)}")
+            
+            # Memory status after batch
+            _, mem = self._check_memory_usage()
+            print(f"Memory after batch {batch_idx + 1}: {mem:.2f} MiB")
+            print("-" * 50)
+            
+            RT_corr.extend(batch_RT_corr)
+            RT_incorr.extend(batch_RT_incorr)
+            del batch_RT_corr, batch_RT_incorr
+            
+            # Inter-batch aggressive memory cleanup
+            self._force_memory_cleanup(aggressive=True)
+        
+        print("\nSimulation completed!")
+        print(f"Total correct responses: {len(RT_corr)}")
+        print(f"Total incorrect responses: {len(RT_incorr)}")
+        _, final_mem = self._check_memory_usage()
+        print(f"Final CPU Memory Usage: {final_mem:.2f} MiB")
+        print("=" * 50)
+        
+        # Save results if save_dir is provided
+        if save_dir is not None:
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            np.save(os.path.join(save_dir, 'RT_corr.npy'), np.array(RT_corr))
+            np.save(os.path.join(save_dir, 'RT_incorr.npy'), np.array(RT_incorr))
+        
+        return np.array(RT_corr), np.array(RT_incorr)
+
+    def generate_dice_RT(self, n_trials=500, seed=2025, max_steps=1000):
+        np.random.seed(seed)
+        
+        v = self.DDM_params.get('v', 1)
+        sig_W = self.DDM_params.get('sig_W', 1)
+        B = self.DDM_params.get('boundary', 1)
+        dt_DDM = self.DDM_params.get('dt_DDM', 1)
+        
+        dl = np.sqrt(sig_W**2 * dt_DDM*1e-3 + (v * dt_DDM*1e-3)**2)
+        p = 0.5 * (1 + (v * dt_DDM*1e-3) / dl)
+        print(f"Discrete simulation parameters: step length dl = {dl:.5f}, probability p = {p:.5f}")
+        
+        pos_RT_dice = []
+        neg_RT_dice = []
+        
+        for _ in range(n_trials):
+            x = 0.0
+            t = 0.0
+            hit_boundary = False
+            for _ in range(max_steps):
+                t += dt_DDM*1e-3
+                if np.random.rand() < p:
+                    x += dl
+                else:
+                    x -= dl
+                if x >= B:
+                    pos_RT_dice.append(t)
+                    hit_boundary = True
+                    break
+                elif x <= -B:
+                    neg_RT_dice.append(t)
+                    hit_boundary = True
+                    break
+            if not hit_boundary:
+                pos_RT_dice.append(np.nan)
+                neg_RT_dice.append(np.nan)
+                
+        return np.array(pos_RT_dice), np.array(neg_RT_dice)
+    
+    def find_optimal_c1(self, c1_range=None, num_seeds=10):
+        """
+        Find the optimal c1 value for given DDM and CANN parameters by sampling different c1 values
+        and using linear regression to find the best fit.
+        
+        Parameters:
+        -----------
+        DDM_params : dict, optional
+            Parameters for the DDM model. If None, default values will be used.
+        CANN_params : dict, optional
+            Parameters for the CANN model. If None, default values will be used.
+        c1_range : array-like, optional
+            Range of c1 values to sample. If None, will use np.linspace(0.1, 2.5, 20)
+        num_seeds : int, optional
+            Number of random seeds to use per c1 value
+            
+        Returns:
+        --------
+        optimal_c1 : float
+            The optimal c1 value found
+        """
+
+        # Update with provided parameters
+        DDM_params = self.DDM_params
+        CANN_params = self.CANN_params
+
+        # Set default c1 range if not provided
+        if c1_range is None:
+            c1_range = np.linspace(0.1, 2.5, 20)
+
+        # Extract parameters
+        dt = DDM_params['dt']
+        dt_DDM = DDM_params['dt_DDM']
+        v = DDM_params['v']
+        sig_W = DDM_params['sig_W']
+        boundary = DDM_params['boundary']
+
+        dur1 = CANN_params['dur1']
+        dur2 = CANN_params['dur2']
+        t_prep = dur1 + 0.1 * dur2
+
+        # Calculate edge velocities for different c1 values
+        all_moving_distances = []
+        v_edge = []
+        
+        for c1 in tqdm(c1_range):
+            moving_distances_per_c1 = []
+            v_edge_per_c1 = []
+            for i in range(num_seeds):
+                seed = 2025 + i
+                clicks_left, clicks_right, _, _ = self.generate_evidence_variable(seed=i)
+                
+                my_model = CANN_DDM_bump_edge_model(
+                    num=CANN_params['num'],
+                    c1=c1,
+                    c2=CANN_params['c2'],
+                    J0_bump=CANN_params['J0_bump'],
+                    tau_bump=CANN_params['tau_bump'],
+                    J0_edge=CANN_params['J0_edge'],
+                    edge_offset=CANN_params['offset'],
+                    optimize_offset=False,
+                    t_prep=t_prep,
+                    a=CANN_params['a'],
+                    A=CANN_params['A'],
+                    beta=CANN_params['beta'],
+                    edge_type=CANN_params['edge_type'],
+                    delta_z=CANN_params['delta_z'],
+                    seed=seed,
+                    boundary=boundary
+                )
+                mon_vars = ['u_dpos', 'RT']
+                runner = self.run_CANN_simulation(my_model, mon_vars, progress_bar=False)
+                
+                # Calculate edge velocity
+                RT = runner.mon.RT[-1]
+                if RT < dur1 + dur2 - t_prep:
+                    edge_velocity = bm.mean(bm.abs(runner.mon.u_dpos[int(t_prep):int(t_prep+RT)])) / dt * 1e3
+                else:
+                    edge_velocity = bm.mean(bm.abs(runner.mon.u_dpos[int(t_prep):])) / dt * 1e3
+                v_edge_per_c1.append(edge_velocity)
+                
+            v_edge.append(v_edge_per_c1)
+        
+        # Calculate mean edge velocity for each c1
+        mean_v_edge = np.mean(v_edge, axis=1)
+        
+        # Perform linear regression
+        slope, intercept, r_value, p_value, std_err = stats.linregress(c1_range, mean_v_edge)
+        
+        # Calculate theoretical optimal c1
+        # Based on the theoretical prediction: v = c1 * bump_height / sigma
+        # where sigma = 0.5/beta
+        bump_height = 0.57  # Typical bump height
+        sigma = 0.5/CANN_params['beta']
+        du = np.sqrt(sig_W**2 * (dt_DDM*1e-3) + (v * dt_DDM*1e-3)**2)
+        v_DDM = du / (dt_DDM*1e-3)
+        
+        # Find the c1 value that gives the closest velocity to the theoretical prediction
+        optimal_c1 = (v_DDM - intercept) / slope
+        
+        return optimal_c1, {
+            'slope': slope,
+            'intercept': intercept,
+            'r_value': r_value,
+            'p_value': p_value,
+            'std_err': std_err,
+            'theoretical_c1': optimal_c1,
+            'mean_v_edge': mean_v_edge,
+            'c1_range': c1_range
+        }
