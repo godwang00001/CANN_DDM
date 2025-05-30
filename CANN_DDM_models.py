@@ -213,8 +213,8 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
       self.if_edge_hit = bm.Variable(bm.bool(False))
       self.RT = bm.Variable(bm.inf)
       self.first_hit = bm.Variable(bm.bool(False))
-      self.dx = 
-      self.x_pred = bm.Variable(bm.zeros(1)) # theoretical prediction of the decision variable
+
+      #self.x_pred = bm.Variable(bm.zeros(1)) # theoretical prediction of the decision variable
 
 
   def init_edge_pop(self, edge_type, edge_offset, optimize_offset, 
@@ -401,7 +401,6 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
     self.Ishift[:] = bm.where(bm.logical_or(self.if_bump_hit, _t < self.t_prep), 0, Ishift)
     #self.I_pause[:] = bm.where(bm.sign(self.u_pos) * self.u_pos < self.boundary, 0, -10)
     self.I_pause[:] = bm.where(self.if_bump_hit, -10, 0)
-    self.x_pred[:] = bm.where(self.clicks_right, self.x_pred+self.delta_z, self.x_pred-self.delta_z)
     u, v, s = self.integral(self.u, self.v, self.s, _t, self.input)
     self.u[:] = bm.where(u>0, u, 0)
     self.v[:] = v 

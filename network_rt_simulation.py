@@ -11,7 +11,7 @@ from jax import clear_caches
 import psutil
 
 class NetworkSimulator:
-    def __init__(self, DDM_params=None, CANN_params=None, mon_vars=None, save_runner=False):
+    def __init__(self, DDM_params=None, CANN_params=None, mon_vars=None, c1_range=None, save_runner=False):
         default_DDM_params = {
             'dt': 1.,
             'dt_DDM': 10.,
@@ -42,15 +42,17 @@ class NetworkSimulator:
         self.CANN_params = {**default_CANN_params, **(CANN_params or {})}
         self.mon_vars = list(set(default_mon_vars) | set(mon_vars if mon_vars is not None else default_mon_vars))
         if 'c1' in self.CANN_params.keys():
-            self.c1_fit = self.CANN_params['c1']
+            self.c1_opt = self.CANN_params['c1']
         else:
             print("c1 not found in CANN_params, finding optimal c1")
             print("-" * 50)
-            self.c1_fit, _ = self.find_optimal_c1()
-            print(f"c1: {self.c1_fit}")
+            self.c1_opt, self.err_per_c1 = self.find_optimal_c1(c1_range=c1_range)
+            c1_opt_err = np.min(np.mean(self.err_per_c1, axis=1))
+            print(f"Find the optimal c1: {self.c1_opt} with average error: {c1_opt_err}")
         self.save_runner = save_runner
         if save_runner:
             self.runners_log = dict()
+            
      
 
 
@@ -120,11 +122,14 @@ class NetworkSimulator:
         clicks_right[:num1] = 0
         clicks_left = bm.repeat(clicks_left, int(dt_DDM / dt))
         clicks_right = bm.repeat(clicks_right, int(dt_DDM / dt))
-        return clicks_left, clicks_right, l, p_right
+        
+        self.dx = l
+        self.p_right = p_right
+        return clicks_left, clicks_right
 
 
     def run_CANN_simulation(self, model, mon_vars, progress_bar=True):
-      clicks_left, clicks_right, _, _ = self.generate_evidence_variable()
+      clicks_left, clicks_right = self.generate_evidence_variable()
       dur1 = self.CANN_params['dur1']
       dur2 = self.CANN_params['dur2']
       dt = self.DDM_params['dt']
@@ -138,7 +143,7 @@ class NetworkSimulator:
       return runner
 
     def run_CANN_simulation_two_edges(self, model, mon_vars, progress_bar=True):
-      clicks_left, clicks_right, _, _ = self.generate_evidence_variable()
+      clicks_left, clicks_right = self.generate_evidence_variable()
       dur1 = self.CANN_params['dur1']
       dur2 = self.CANN_params['dur2']
       dt = self.DDM_params['dt']
@@ -214,9 +219,9 @@ class NetworkSimulator:
                     self._force_memory_cleanup(aggressive=False)
                 
                 seed_val = int(seed_val)
-                clicks_left, clicks_right, _, _ = self.generate_evidence_variable(seed=seed_val)
+                clicks_left, clicks_right = self.generate_evidence_variable(seed=seed_val)
                 
-                my_model = CANN_DDM_bump_edge_model(num=num, c1=self.c1_fit, c2=c2, J0_bump=J0_bump,
+                my_model = CANN_DDM_bump_edge_model(num=num, c1=self.c1_opt, c2=c2, J0_bump=J0_bump,
                                                 tau_bump=tau_bump,
                                                 tau_edge=tau_edge,
                                                 J0_edge=J0_edge, edge_offset=offset,
@@ -329,11 +334,124 @@ class NetworkSimulator:
                 
         return np.array(pos_RT_dice), np.array(neg_RT_dice)
     
+    # def find_optimal_c1(self, c1_range=None, num_seeds=10):
+    #     """
+    #     Find the optimal c1 value for given DDM and CANN parameters by sampling different c1 values
+    #     and using linear regression to find the best fit.
+        
+    #     Parameters:
+    #     -----------
+    #     DDM_params : dict, optional
+    #         Parameters for the DDM model. If None, default values will be used.
+    #     CANN_params : dict, optional
+    #         Parameters for the CANN model. If None, default values will be used.
+    #     c1_range : array-like, optional
+    #         Range of c1 values to sample. If None, will use np.linspace(0.1, 2.5, 20)
+    #     num_seeds : int, optional
+    #         Number of random seeds to use per c1 value
+            
+    #     Returns:
+    #     --------
+    #     optimal_c1 : float
+    #         The optimal c1 value found
+    #     """
+
+    #     # Update with provided parameters
+    #     DDM_params = self.DDM_params
+    #     CANN_params = self.CANN_params
+
+    #     # Set default c1 range if not provided
+    #     if c1_range is None:
+    #         c1_range = np.linspace(0.1, 2.5, 20)
+
+    #     # Extract parameters
+    #     dt = DDM_params['dt']
+    #     dt_DDM = DDM_params['dt_DDM']
+    #     v = DDM_params['v']
+    #     sig_W = DDM_params['sig_W']
+    #     boundary = DDM_params['boundary']
+
+    #     dur1 = CANN_params['dur1']
+    #     dur2 = CANN_params['dur2']
+    #     t_prep = dur1 + 0.1 * dur2
+
+    #     # Calculate edge velocities for different c1 values
+    #     all_moving_distances = []
+    #     v_edge = []
+        
+    #     for c1 in tqdm(c1_range):
+    #         moving_distances_per_c1 = []
+    #         v_edge_per_c1 = []
+    #         for i in range(num_seeds):
+    #             seed = 2025 + i
+    #             clicks_left, clicks_right = self.generate_evidence_variable(seed=i)
+                
+    #             my_model = CANN_DDM_bump_edge_model(
+    #                 num=CANN_params['num'],
+    #                 c1=c1,
+    #                 c2=CANN_params['c2'],
+    #                 J0_bump=CANN_params['J0_bump'],
+    #                 tau_bump=CANN_params['tau_bump'],
+    #                 J0_edge=CANN_params['J0_edge'],
+    #                 edge_offset=CANN_params['offset'],
+    #                 optimize_offset=False,
+    #                 t_prep=t_prep,
+    #                 a=CANN_params['a'],
+    #                 A=CANN_params['A'],
+    #                 beta=CANN_params['beta'],
+    #                 edge_type=CANN_params['edge_type'],
+    #                 delta_z=CANN_params['delta_z'],
+    #                 seed=seed,
+    #                 boundary=boundary
+    #             )
+    #             mon_vars = ['u_dpos', 'RT']
+    #             runner = self.run_CANN_simulation(my_model, mon_vars, progress_bar=False)
+                
+    #             # Calculate edge velocity
+    #             RT = runner.mon.RT[-1]
+    #             if RT < dur1 + dur2 - t_prep:
+    #                 edge_velocity = bm.mean(bm.abs(runner.mon.u_dpos[int(t_prep):int(t_prep+RT)])) / dt * 1e3
+    #             else:
+    #                 edge_velocity = bm.mean(bm.abs(runner.mon.u_dpos[int(t_prep):])) / dt * 1e3
+    #             v_edge_per_c1.append(edge_velocity)
+                
+    #         v_edge.append(v_edge_per_c1)
+        
+    #     # Calculate mean edge velocity for each c1
+    #     mean_v_edge = np.mean(v_edge, axis=1)
+        
+    #     # Perform linear regression
+    #     slope, intercept, r_value, p_value, std_err = stats.linregress(c1_range, mean_v_edge)
+        
+    #     # Calculate theoretical optimal c1
+    #     # Based on the theoretical prediction: v = c1 * bump_height / sigma
+    #     # where sigma = 0.5/beta
+    #     bump_height = 0.57  # Typical bump height
+    #     sigma = 0.5/CANN_params['beta']
+    #     du = np.sqrt(sig_W**2 * (dt_DDM*1e-3) + (v * dt_DDM*1e-3)**2)
+    #     v_DDM = du / (dt_DDM*1e-3)
+        
+    #     # Find the c1 value that gives the closest velocity to the theoretical prediction
+    #     optimal_c1 = (v_DDM - intercept) / slope
+        
+    #     return optimal_c1, {
+    #         'slope': slope,
+    #         'intercept': intercept,
+    #         'r_value': r_value,
+    #         'p_value': p_value,
+    #         'std_err': std_err,
+    #         'theoretical_c1': optimal_c1,
+    #         'mean_v_edge': mean_v_edge,
+    #         'c1_range': c1_range
+    #     }
+
+
+
     def find_optimal_c1(self, c1_range=None, num_seeds=10):
         """
         Find the optimal c1 value for given DDM and CANN parameters by sampling different c1 values
         and using linear regression to find the best fit.
-        
+
         Parameters:
         -----------
         DDM_params : dict, optional
@@ -344,7 +462,7 @@ class NetworkSimulator:
             Range of c1 values to sample. If None, will use np.linspace(0.1, 2.5, 20)
         num_seeds : int, optional
             Number of random seeds to use per c1 value
-            
+
         Returns:
         --------
         optimal_c1 : float
@@ -357,7 +475,8 @@ class NetworkSimulator:
 
         # Set default c1 range if not provided
         if c1_range is None:
-            c1_range = np.linspace(0.1, 2.5, 20)
+            c1_range = np.linspace(0.1, 5, 20)
+
 
         # Extract parameters
         dt = DDM_params['dt']
@@ -368,25 +487,23 @@ class NetworkSimulator:
 
         dur1 = CANN_params['dur1']
         dur2 = CANN_params['dur2']
-        t_prep = dur1 + 0.1 * dur2
+        t_prep = int(dur1 + 0.1 * dur2)
 
         # Calculate edge velocities for different c1 values
         all_moving_distances = []
         v_edge = []
-        
+        err_per_c1 = []
         for c1 in tqdm(c1_range):
-            moving_distances_per_c1 = []
-            v_edge_per_c1 = []
+            err = []
             for i in range(num_seeds):
-                seed = 2025 + i
-                clicks_left, clicks_right, _, _ = self.generate_evidence_variable(seed=i)
-                
+                clicks_left, clicks_right = self.generate_evidence_variable(seed=i)
                 my_model = CANN_DDM_bump_edge_model(
                     num=CANN_params['num'],
                     c1=c1,
                     c2=CANN_params['c2'],
                     J0_bump=CANN_params['J0_bump'],
                     tau_bump=CANN_params['tau_bump'],
+                    tau_edge=CANN_params['tau_edge'],
                     J0_edge=CANN_params['J0_edge'],
                     edge_offset=CANN_params['offset'],
                     optimize_offset=False,
@@ -396,46 +513,20 @@ class NetworkSimulator:
                     beta=CANN_params['beta'],
                     edge_type=CANN_params['edge_type'],
                     delta_z=CANN_params['delta_z'],
-                    seed=seed,
+                    seed=i,
                     boundary=boundary
                 )
-                mon_vars = ['u_dpos', 'RT']
+                mon_vars = ['u_dpos', 's_pos', 'RT']
                 runner = self.run_CANN_simulation(my_model, mon_vars, progress_bar=False)
-                
-                # Calculate edge velocity
-                RT = runner.mon.RT[-1]
-                if RT < dur1 + dur2 - t_prep:
-                    edge_velocity = bm.mean(bm.abs(runner.mon.u_dpos[int(t_prep):int(t_prep+RT)])) / dt * 1e3
-                else:
-                    edge_velocity = bm.mean(bm.abs(runner.mon.u_dpos[int(t_prep):])) / dt * 1e3
-                v_edge_per_c1.append(edge_velocity)
-                
-            v_edge.append(v_edge_per_c1)
-        
-        # Calculate mean edge velocity for each c1
-        mean_v_edge = np.mean(v_edge, axis=1)
-        
-        # Perform linear regression
-        slope, intercept, r_value, p_value, std_err = stats.linregress(c1_range, mean_v_edge)
-        
-        # Calculate theoretical optimal c1
-        # Based on the theoretical prediction: v = c1 * bump_height / sigma
-        # where sigma = 0.5/beta
-        bump_height = 0.57  # Typical bump height
-        sigma = 0.5/CANN_params['beta']
-        du = np.sqrt(sig_W**2 * (dt_DDM*1e-3) + (v * dt_DDM*1e-3)**2)
-        v_DDM = du / (dt_DDM*1e-3)
-        
-        # Find the c1 value that gives the closest velocity to the theoretical prediction
-        optimal_c1 = (v_DDM - intercept) / slope
-        
-        return optimal_c1, {
-            'slope': slope,
-            'intercept': intercept,
-            'r_value': r_value,
-            'p_value': p_value,
-            'std_err': std_err,
-            'theoretical_c1': optimal_c1,
-            'mean_v_edge': mean_v_edge,
-            'c1_range': c1_range
-        }
+                # Calculate the expected decision variable trajectory 
+                RT = runner.mon.RT[-1] if runner.mon.RT[-1] != bm.inf else dur1 + dur2 - t_prep
+                RT = int(RT)
+                x_pred = np.cumsum(clicks_left[t_prep:t_prep+RT] * (-self.dx) / dt_DDM  + clicks_right[t_prep:t_prep+RT] * (self.dx) / dt_DDM)
+                x_sim = runner.mon.s_pos[t_prep:t_prep+RT]
+                err.append(np.mean(np.abs(x_pred - x_sim)))
+            err_per_c1.append(err)
+
+        err_per_c1 = np.array(err_per_c1)
+        c1_opt = c1_range[np.argmin(err_per_c1.mean(axis=1))]
+        return c1_opt, err_per_c1
+
