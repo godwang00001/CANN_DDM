@@ -70,7 +70,7 @@ class NetworkSimulator:
             
         # Clear JAX
         clear_caches()
-        jax.clear_backends()
+        #jax.clear_backends()
         
         # Clear BrainPy caches
         if hasattr(bm, 'clear_cache'):

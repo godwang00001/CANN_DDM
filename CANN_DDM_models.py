@@ -8,7 +8,7 @@ import scipy
 from tqdm import tqdm 
 from jaxopt import Bisection, GaussNewton
 path_dir = '/Users/wangchenyu/research/CANN/CANN_diffusion_model/'
-
+bm.set_platform('gpu')
 
 class CANN_DDM_base_model(bp.dyn.NeuDyn):
   def __init__(self, seed=None, num=1024, m=0, tau_bump=1., tau_v=10., k=8.1, a=0.5, A=10., J0_bump=4.,
@@ -34,6 +34,7 @@ class CANN_DDM_base_model(bp.dyn.NeuDyn):
       self.z_min = z_min
       self.z_max = z_max
       self.z_range = z_max - z_min
+      
       self.x = bm.linspace(z_min, z_max, num)
       self.n = bm.arange(self.num) # neuron index
       self.rho = num / self.z_range
