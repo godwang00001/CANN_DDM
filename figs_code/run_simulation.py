@@ -32,7 +32,7 @@ def main():
 
     CANN_params = {
         'dur1': 500,
-        'dur2': 2000,
+        'dur2': 4000,
         'edge_type': 'tanh', 
         'num': 1024,
         'tau_bump': 0.08,
