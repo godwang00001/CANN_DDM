@@ -8,11 +8,11 @@ import scipy
 from tqdm import tqdm 
 from jaxopt import Bisection, GaussNewton
 path_dir = '/Users/wangchenyu/research/CANN/CANN_diffusion_model/'
-bm.set_platform('gpu')
+
 
 class CANN_DDM_base_model(bp.dyn.NeuDyn):
   def __init__(self, seed=None, num=1024, m=0, tau_bump=1., tau_v=10., k=8.1, a=0.5, A=10., J0_bump=4.,
-              z_min=-bm.pi, z_max=bm.pi, c=1, boundary=1, t_prep=0,  **kwargs):
+              z_min=-bm.pi, z_max=bm.pi, c=1, boundary=1, t_prep=0, **kwargs):
       super(CANN_DDM_base_model, self).__init__(size=num, **kwargs)
 
       # 0. Initialize the random seed
@@ -43,7 +43,7 @@ class CANN_DDM_base_model(bp.dyn.NeuDyn):
       # 3. Initialize variables for the bump population
       self.u = bm.Variable(bm.zeros(num))
       self.v = bm.Variable(bm.zeros(num))  # SFA current
-      self.r = bm.Variable(bm.zeros(num))  # output firing rate
+      self.fr_u = bm.Variable(bm.zeros(num))  # output firing rate
       self.Irec = bm.Variable(bm.zeros(num))  # recurrent input
       self.u_pos = bm.Variable(0.0)  # record the position of the bump
       self.ul_pos = bm.Variable(0.0)  # record the position of the bump
@@ -184,9 +184,9 @@ class CANN_DDM_base_model(bp.dyn.NeuDyn):
     # Update primary bump population
     _t = bp.share['t']
     u2 = bm.square(self.u)
-    self.r.value = u2 / (1.0 + self.k * bm.sum(u2))
-    self.Irec[:] = self.conn_mat @ self.r
-    Ishift = self.c * (self.clicks_left * self.conn_left @ self.r + self.clicks_right * self.conn_right @ self.r)
+    self.fr_u.value = u2 / (1.0 + self.k * bm.sum(u2))
+    self.Irec[:] = self.conn_mat @ self.fr_u
+    Ishift = self.c * (self.clicks_left * self.conn_left @ self.fr_u + self.clicks_right * self.conn_right @ self.fr_u)
     Ishift_pause_by_bound = bm.where(bm.sign(self.u_pos) * self.u_pos < self.boundary, Ishift, 0)
     self.Ishift = bm.where(_t<self.t_prep, 0, Ishift_pause_by_bound)
     u, v = self.integral(self.u, self.v, bp.share['t'], self.input)
@@ -198,13 +198,14 @@ class CANN_DDM_base_model(bp.dyn.NeuDyn):
 
 class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
   def __init__(self, num=1024, tau_edge=1, c1=1., c2=1., 
-              boundary=1, beta=2.5, fixed_ratio=0.05,
+              boundary=1, beta=2.5, sigma_edge=1, fixed_ratio=0.05,
               J0_edge=1, edge_type='tanh', edge_offset=0, 
               optimize_offset=False, delta_z=1, speed_mode='const', alpha=None, **kwargs):
       super().__init__(num=num, boundary=boundary, **kwargs)
       self.tau_edge = tau_edge
       self.edge_type = edge_type
       self.beta = beta
+      self.sigma_edge = sigma_edge
       #self.x0 = (self.z_max + self.z_min) / 2 # default starting pos for the edge
       self.n = bm.arange(self.num)
       self.n0 = 0.5 * self.num
@@ -245,7 +246,8 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
     self.dFnt = lambda n: self.Fnt(n+self.dx) - self.Fnt(n)
     
     self.s = bm.Variable(self.s0)
-    self.Iss = bm.Variable(bm.zeros(self.num))
+    self.fr_s = bm.Variable(self.s0)
+    self.Iss = bm.Variable(self.s0)
     mask = bm.zeros_like(self.s0, dtype=bool)
     self.mask = mask.at[self.fixed_end_width+50:-self.fixed_end_width-50].set(True) # mask to cut off the two ends of the edge for display
     if optimize_offset:
@@ -306,7 +308,7 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
     return sol.x
 
   def get_s_fr(self, s):
-    return bm.tanh(self.beta * s)
+    return bm.tanh(self.sigma_edge * s)
 
 
   def find_edge_location(self, edge_state):
@@ -381,11 +383,11 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
     self.if_bump_hit = bm.logical_or(self.if_bump_hit, if_bump_hit)
     self.if_edge_hit = bm.logical_or(self.if_edge_hit, if_edge_hit)
   
+    self.fr_u[:] = bm.square(self.u)/ (1.0 + 8.1 * bm.sum(bm.square(self.u)))
+    self.Irec[:] = self.conn_mat @ self.fr_u
 
-    u2 = bm.square(self.u)
-    self.r.value = u2 / (1.0 + 8.1 * bm.sum(u2))
-    self.Irec[:] = self.conn_mat @ self.r
-    self.Iss[:] = self.conn_mat_ss @ bm.tanh(self.beta * self.s)
+    self.fr_s[:] = self.get_s_fr(self.s)
+    self.Iss[:] = self.conn_mat_ss @ self.fr_s
     
     Ius = self.clicks_right * self.u + self.clicks_left * (-self.u)
     #Ius = bm.where(_t<self.t_prep, 0, self.c1 * Ius)
@@ -396,7 +398,7 @@ class CANN_DDM_bump_edge_model(CANN_DDM_base_model):
 
     #Ishift = self.c2*(self.clicks_left * self.conn_left @ self.r + self.clicks_right * self.conn_right @ self.r)
     Ishift = bm.zeros_like(self.s0)
-    Ishift[self.mask] = -self.c2_dyn * bm.diff(self.s[self.mask], prepend=self.s[self.mask][0])
+    Ishift[self.mask] = -self.c2_dyn * bm.diff(self.fr_s[self.mask], prepend=self.fr_s[self.mask][0])
     #Ishift = bm.where(bm.sign(self.u_pos) * self.u_pos < self.boundary, Ishift, 0)
     #self.Ishift[:] = bm.where(_t<self.t_prep, 0, Ishift)
     self.Ishift[:] = bm.where(bm.logical_or(self.if_bump_hit, _t < self.t_prep), 0, Ishift)

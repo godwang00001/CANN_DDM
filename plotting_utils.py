@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
+import brainpy as bp
 def plot_rt_distribution(RT_sim_corr, RT_sim_incorr, RT_dice_corr, RT_dice_incorr, save_path=None, show_plot=True, figsize=(8, 6), dpi=300, colors=None):
     plt.style.use('seaborn-v0_8-paper') 
     
@@ -131,3 +131,18 @@ def plot_rt_distribution(RT_sim_corr, RT_sim_incorr, RT_dice_corr, RT_dice_incor
         plt.show()
     else:
         plt.close() 
+
+def display_1D_dyn(runner, model, display_vars, save_path=None):
+ 
+    mask = model.mask
+    dynamical_vars = [{'ys': getattr(runner.mon, var)[:, mask], 'xs': model.x[mask], 'label': var} for var in display_vars]
+    if save_path is None:
+        save_path = 'display_dyn.gif'
+        
+    bp.visualize.animate_1D(
+    dynamical_vars=dynamical_vars,
+    frame_step=10,
+    frame_delay=50,
+    show=True,
+    save_path=save_path,
+    ylim=[-1.1,1.1])

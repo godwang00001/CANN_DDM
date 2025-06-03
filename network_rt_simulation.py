@@ -5,13 +5,14 @@ from CANN_DDM_models import CANN_DDM_bump_edge_model
 from tqdm import tqdm
 import gc
 import os
+import subprocess
 from scipy import stats
 import jax
 from jax import clear_caches
 import psutil
 
 class NetworkSimulator:
-    def __init__(self, DDM_params=None, CANN_params=None, mon_vars=None, c1_range=None, save_runner=False):
+    def __init__(self, DDM_params=None, CANN_params=None, mon_vars=None, c1_range=None, save_runner=False, platform='cpu'):
         default_DDM_params = {
             'dt': 1.,
             'dt_DDM': 10.,
@@ -41,6 +42,9 @@ class NetworkSimulator:
         self.DDM_params = {**default_DDM_params, **(DDM_params or {})}
         self.CANN_params = {**default_CANN_params, **(CANN_params or {})}
         self.mon_vars = list(set(default_mon_vars) | set(mon_vars if mon_vars is not None else default_mon_vars))
+        bm.set_platform(platform)
+        self.platform = platform.lower()
+        
         if 'c1' in self.CANN_params.keys():
             self.c1_opt = self.CANN_params['c1']
         else:
@@ -52,6 +56,8 @@ class NetworkSimulator:
         self.save_runner = save_runner
         if save_runner:
             self.runners_log = dict()
+        self.t_prep = int((self.CANN_params['dur1'] + 0.1 * self.CANN_params['dur2']) / self.DDM_params['dt_DDM'])
+
             
      
 
@@ -109,17 +115,16 @@ class NetworkSimulator:
         dt_DDM = self.DDM_params['dt_DDM']
         dt = self.DDM_params['dt']
 
-        if seed is not None:
-            bm.random.seed(seed)
+    
         l =  bm.sqrt(sig_W**2 * dt_DDM/1e3 + (v*dt_DDM/1e3)**2)
         num1 = int(dur1 / dt_DDM) 
         num2 = int(dur2 / dt_DDM)
         p_right = 1/2 * (1 + v * (dt_DDM/1e3)/l)
         p_left = 1 - p_right
         clicks_left = bm.random.binomial(1, p_left, num1+num2)
-        clicks_left[:num1] = 0
+        clicks_left[:self.t_prep] = 0
         clicks_right = 1 - clicks_left
-        clicks_right[:num1] = 0
+        clicks_right[:self.t_prep] = 0
         clicks_left = bm.repeat(clicks_left, int(dt_DDM / dt))
         clicks_right = bm.repeat(clicks_right, int(dt_DDM / dt))
         
@@ -128,8 +133,8 @@ class NetworkSimulator:
         return clicks_left, clicks_right
 
 
-    def run_CANN_simulation(self, model, mon_vars, progress_bar=True):
-      clicks_left, clicks_right = self.generate_evidence_variable()
+    def run_CANN_simulation(self, model, mon_vars, seed_evidence=None, progress_bar=True):
+      clicks_left, clicks_right = self.generate_evidence_variable(seed=seed_evidence)
       dur1 = self.CANN_params['dur1']
       dur2 = self.CANN_params['dur2']
       dt = self.DDM_params['dt']
@@ -142,8 +147,8 @@ class NetworkSimulator:
       runner.run(dur1+dur2)
       return runner
 
-    def run_CANN_simulation_two_edges(self, model, mon_vars, progress_bar=True):
-      clicks_left, clicks_right = self.generate_evidence_variable()
+    def run_CANN_simulation_two_edges(self, model, mon_vars, seed_evidence=None, progress_bar=True):
+      clicks_left, clicks_right = self.generate_evidence_variable(seed=seed_evidence)
       dur1 = self.CANN_params['dur1']
       dur2 = self.CANN_params['dur2']
       dt = self.DDM_params['dt']
@@ -159,27 +164,109 @@ class NetworkSimulator:
 
     def _check_memory_usage(self, threshold_mb=8000):
         """
-        Check current memory usage and return True if above threshold
+        Check current memory usage based on platform type and return True if above threshold
+        
+        Args:
+            threshold_mb: Memory threshold in MiB
+            
+        Returns:
+            tuple: (is_above_threshold, current_memory_usage_mb, memory_type)
+        """
+        try:
+            if self.platform == 'gpu':
+                # 检查GPU内存使用情况
+                return self._check_gpu_memory_usage(threshold_mb)
+            else:
+                # 检查CPU内存使用情况
+                return self._check_cpu_memory_usage(threshold_mb)
+        except Exception as e:
+            print(f"Warning: Error checking {self.platform} memory usage: {e}")
+            # 如果GPU检查失败，回退到CPU检查
+            if self.platform == 'gpu':
+                print("Falling back to CPU memory checking")
+                return self._check_cpu_memory_usage(threshold_mb)
+            else:
+                # 如果CPU检查也失败，返回安全值
+                return False, 0, 'unknown'
+    
+    def _check_cpu_memory_usage(self, threshold_mb):
+        """
+        Check CPU memory usage
         """
         process = psutil.Process(os.getpid())
         current_mem = process.memory_info().rss / 1024**2  # in MiB
-        return current_mem > threshold_mb, current_mem
+        return current_mem > threshold_mb, current_mem, 'cpu'
+    
+    def _check_gpu_memory_usage(self, threshold_mb):
+        """
+        实时检测 GPU 内存占用情况。如果占用超过阈值，则返回 True。
+        支持使用 pynvml（推荐）或 fallback 到 nvidia-smi / PyTorch。
+        """
+        try:
+            # 优先使用 pynvml 获取 GPU 内存信息
+            try:
+                import pynvml
+                pynvml.nvmlInit()
+                handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # 默认检测第一个 GPU
+                meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                memory_used_mb = meminfo.used / 1024**2
+                pynvml.nvmlShutdown()
+                return memory_used_mb > threshold_mb, memory_used_mb, 'gpu'
+            except ImportError:
+                pass  # 如果未安装 pynvml，继续尝试其他方法
 
-    def simulate_network(self, num_trials=500, batch_size=5, save_dir=None, memory_threshold=8000):
-        import weakref
-        
+            # fallback 使用 nvidia-smi 命令行
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
+                    capture_output=True, text=True, timeout=3)
+                if result.returncode == 0:
+                    memory_used_mb = float(result.stdout.strip().split('\n')[0])
+                    return memory_used_mb > threshold_mb, memory_used_mb, 'gpu'
+            except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, IndexError):
+                pass
+
+            # fallback 使用 PyTorch
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    memory_used_bytes = torch.cuda.memory_allocated()
+                    memory_used_mb = memory_used_bytes / 1024**2
+                    return memory_used_mb > threshold_mb, memory_used_mb, 'gpu'
+            except ImportError:
+                pass
+
+            print("Warning: Unable to get GPU memory info, falling back to CPU memory")
+            return self._check_cpu_memory_usage(threshold_mb)
+
+        except Exception as e:
+            print(f"Unexpected error while checking GPU memory: {e}")
+            return False, 0.0, 'unknown'
+
+
+    def simulate_network(self, num_trials=500, batch_size=5, save_dir=None, memory_threshold=8000, seed_mode='fixed', seed_start=2025, seed_evidence=None):
+        # Handle seed generator
+        if seed_mode == 'fixed':
+            seed_sequence = np.arange(num_trials) +seed_start
+        elif seed_mode == 'random':
+            seed_sequence = [bm.random.randint(0, int(1e9)) for _ in range(num_trials)]
+        else:
+            raise ValueError("seed_mode must be either 'random' or 'fixed'")
+
+
         dt = self.DDM_params['dt']
         v = self.DDM_params['v']
         boundary = self.DDM_params['boundary']
         
         dur1 = self.CANN_params['dur1']
         dur2 = self.CANN_params['dur2']
-        t_prep = dur1 + 0.1 * dur2
         edge_type = self.CANN_params['edge_type']
         num = self.CANN_params['num']
         tau_bump = self.CANN_params['tau_bump']
         tau_edge = self.CANN_params['tau_edge']
         beta = self.CANN_params['beta']
+        sigma_edge = self.CANN_params['sigma_edge']
         offset = self.CANN_params['offset']
         delta_z = self.CANN_params['delta_z']
         J0_bump = self.CANN_params['J0_bump']
@@ -206,31 +293,33 @@ class NetworkSimulator:
             print(f"\nProcessing Batch {batch_idx + 1}/{total_batches} (Trials {batch_start + 1}-{batch_end})")
             print("-" * 50)
             
-            for seed_val in tqdm(range(batch_start, batch_end), 
+            for trial_idx in tqdm(range(batch_start, batch_end), 
                             desc=f"Trials in batch {batch_idx + 1}",
                             ncols=80):
                 
                 # Pre-trial memory check and cleanup
-                high_mem, current_mem = self._check_memory_usage(memory_threshold)
+                high_mem, current_mem, mem_type = self._check_memory_usage(memory_threshold)
                 if high_mem:
-                    print(f"\nWarning: High memory usage detected ({current_mem:.1f} MiB). Forcing cleanup...")
+                    print(f"\nWarning: High {mem_type} memory usage detected ({current_mem:.1f} MiB). Forcing cleanup...")
                     self._force_memory_cleanup(aggressive=True)
                 else:
                     self._force_memory_cleanup(aggressive=False)
                 
-                seed_val = int(seed_val)
-                clicks_left, clicks_right = self.generate_evidence_variable(seed=seed_val)
+                seed_network = int(seed_sequence[trial_idx])
+                if seed_evidence is None:
+                    seed_evidence = seed_network
+                clicks_left, clicks_right = self.generate_evidence_variable(seed=seed_evidence)
                 
-                my_model = CANN_DDM_bump_edge_model(num=num, c1=self.c1_opt, c2=c2, J0_bump=J0_bump,
+                self.model = CANN_DDM_bump_edge_model(num=num, c1=self.c1_opt, c2=c2, J0_bump=J0_bump,
                                                 tau_bump=tau_bump,
                                                 tau_edge=tau_edge,
                                                 J0_edge=J0_edge, edge_offset=offset,
-                                                optimize_offset=False,
-                                                t_prep=t_prep, a=a, A=A,
-                                                beta=beta, edge_type=edge_type, delta_z=delta_z, 
-                                                seed=seed_val, boundary=boundary)
+                                                optimize_offset=False, a=a, A=A,
+                                                beta=beta, sigma_edge=sigma_edge, 
+                                                edge_type=edge_type, delta_z=delta_z, 
+                                                seed=seed_network, boundary=boundary)
             
-                runner = self.run_CANN_simulation(my_model, self.mon_vars, progress_bar=False)
+                runner = self.run_CANN_simulation(self.model, self.mon_vars, progress_bar=False)
                 
                 if runner.mon.RT[-1] != bm.inf:
                     rt_val = float(runner.mon.RT[-1])
@@ -248,16 +337,15 @@ class NetworkSimulator:
                             delattr(runner.mon, key)
                         
                 # Clear model internals
-                if hasattr(my_model, 'clear_cache'):
-                    my_model.clear_cache()
-                if hasattr(my_model, 'reset_state'):
-                    my_model.reset_state()
+                if hasattr(self.model, 'clear_cache'):
+                    self.model.clear_cache()
+                if hasattr(self.model, 'reset_state'):
+                    self.model.reset_state()
                     
                 # Explicit deletion of large objects
                 del clicks_left, clicks_right
-                del my_model
                 if self.save_runner:
-                    self.runners_log[seed_val] = runner
+                    self.runners_log[seed_network] = runner
                 else:
                     del runner
                 # Force aggressive memory cleanup
@@ -268,8 +356,8 @@ class NetworkSimulator:
             print(f"Incorrect responses: {len(batch_RT_incorr)}")
             
             # Memory status after batch
-            _, mem = self._check_memory_usage()
-            print(f"Memory after batch {batch_idx + 1}: {mem:.2f} MiB")
+            _, mem, mem_type = self._check_memory_usage()
+            print(f"{mem_type.upper()} Memory after batch {batch_idx + 1}: {mem:.2f} MiB")
             print("-" * 50)
             
             RT_corr.extend(batch_RT_corr)
@@ -282,21 +370,30 @@ class NetworkSimulator:
         print("\nSimulation completed!")
         print(f"Total correct responses: {len(RT_corr)}")
         print(f"Total incorrect responses: {len(RT_incorr)}")
-        _, final_mem = self._check_memory_usage()
-        print(f"Final CPU Memory Usage: {final_mem:.2f} MiB")
+        _, final_mem, mem_type = self._check_memory_usage()
+        print(f"Final {mem_type.upper()} Memory Usage: {final_mem:.2f} MiB")
         print("=" * 50)
         
-        # Save results if save_dir is provided
         if save_dir is not None:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            np.save(os.path.join(save_dir, 'RT_corr.npy'), np.array(RT_corr))
-            np.save(os.path.join(save_dir, 'RT_incorr.npy'), np.array(RT_incorr))
-        
-        return np.array(RT_corr), np.array(RT_incorr)
+
+            save_path = os.path.join(save_dir, 'RT_sim.npz')
+
+            RT_corr = np.array(RT_corr)
+            RT_incorr = np.array(RT_incorr)
+
+            if os.path.exists(save_path):
+                data_old = np.load(save_path)
+                RT_corr = np.concatenate([data_old['RT_corr'], RT_corr])
+                RT_incorr = np.concatenate([data_old['RT_incorr'], RT_incorr])
+
+            np.savez_compressed(save_path, RT_corr=RT_corr, RT_incorr=RT_incorr)
+
+        return RT_corr, RT_incorr
 
     def generate_dice_RT(self, n_trials=500, seed=2025, max_steps=1000):
-        np.random.seed(seed)
+        bm.random.seed(seed)
         
         v = self.DDM_params.get('v', 1)
         sig_W = self.DDM_params.get('sig_W', 1)
@@ -316,7 +413,7 @@ class NetworkSimulator:
             hit_boundary = False
             for _ in range(max_steps):
                 t += dt_DDM*1e-3
-                if np.random.rand() < p:
+                if bm.random.rand() < p:
                     x += dl
                 else:
                     x -= dl
@@ -487,7 +584,6 @@ class NetworkSimulator:
 
         dur1 = CANN_params['dur1']
         dur2 = CANN_params['dur2']
-        t_prep = int(dur1 + 0.1 * dur2)
 
         # Calculate edge velocities for different c1 values
         all_moving_distances = []
@@ -504,10 +600,10 @@ class NetworkSimulator:
                     J0_bump=CANN_params['J0_bump'],
                     tau_bump=CANN_params['tau_bump'],
                     tau_edge=CANN_params['tau_edge'],
+                    sigma_edge=CANN_params['sigma_edge'],
                     J0_edge=CANN_params['J0_edge'],
                     edge_offset=CANN_params['offset'],
                     optimize_offset=False,
-                    t_prep=t_prep,
                     a=CANN_params['a'],
                     A=CANN_params['A'],
                     beta=CANN_params['beta'],
@@ -519,11 +615,14 @@ class NetworkSimulator:
                 mon_vars = ['u_dpos', 's_pos', 'RT']
                 runner = self.run_CANN_simulation(my_model, mon_vars, progress_bar=False)
                 # Calculate the expected decision variable trajectory 
-                RT = runner.mon.RT[-1] if runner.mon.RT[-1] != bm.inf else dur1 + dur2 - t_prep
-                RT = int(RT)
-                x_pred = np.cumsum(clicks_left[t_prep:t_prep+RT] * (-self.dx) / dt_DDM  + clicks_right[t_prep:t_prep+RT] * (self.dx) / dt_DDM)
-                x_sim = runner.mon.s_pos[t_prep:t_prep+RT]
-                err.append(np.mean(np.abs(x_pred - x_sim)))
+                RT_sim = runner.mon.RT[-1] if runner.mon.RT[-1] != bm.inf else dur1 + dur2 - self.t_prep - 1
+                RT_sim = int(RT_sim)
+                x_pred = np.cumsum(clicks_left[self.t_prep:] * (-self.dx) / dt_DDM  + clicks_right[self.t_prep:] * (self.dx) / dt_DDM)
+                x_sim = runner.mon.s_pos[self.t_prep:]
+                cross_idx = np.where(bm.abs(x_pred) > boundary)[0]
+                RT_pred = cross_idx[0] if cross_idx.size > 0 else dur1 + dur2 - self.t_prep
+                RT = np.min([RT_sim, RT_pred])
+                err.append(np.abs(x_sim[RT] - x_pred[RT]))
             err_per_c1.append(err)
 
         err_per_c1 = np.array(err_per_c1)
