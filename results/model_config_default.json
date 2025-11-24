@@ -1,0 +1,44 @@
+{
+  "edge_pop": {
+    "num_E": 1024,
+    "tau_E": 1,
+    "c_EB": 5,
+    "beta_E": 2.5,
+    "sigma_E": 2,
+    "fixed_ratio": 0.05,
+    "J0_E": 2,
+    "edge_type": "tanh",
+    "edge_offset": -0.006176,
+    "s_E": 1.05,
+    "direction": "left",
+    "k1": 307,
+    "k2": 512,
+    "k0": 409
+  },
+  "bump_pop": {
+    "num_B": 1024,
+    "tau_B": 0.1,
+    "c_BE": 2.5,
+    "c_BE_params": {
+      "mode": "quadratic",
+      "a": -0.000727,
+      "b": 0.0381
+    },
+    "J0_B": 10,
+    "k_B": 0.01,
+    "a_B": 1,
+    "m_B": 0,
+    "tau_VB": 10
+  },
+  "decision_space_params": {
+    "t_start": 200,
+    "boundary": 1,
+    "drift_rate": 0,
+    "noise_scale": 0.1,
+    "dt_DDM": 1.0,
+    "x0": 0.5,
+    "dur1": 100,
+    "dur2": 1000,
+    "seed": 4
+  }
+}
