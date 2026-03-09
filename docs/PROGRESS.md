@@ -18,3 +18,19 @@ This file records completed modeling, validation, and figure-generation work.
 
 ### Checkpoint
 - `docs/THEORY_UNDERSTANDING.md` now reflects a user-confirmed baseline interpretation of the theory as of March 9, 2026.
+
+## 2026-03-09
+
+### Completed
+- Added a free manuscript-sync workflow based on a separate local LaTeX repo rather than paid platform integrations.
+- Added `scripts/sync_paper.sh` to pull, build, and mirror the manuscript PDF into `docs/paper.pdf`.
+- Added `docs/MANUSCRIPT_SYNC.md` to document the expected source-repo layout and sync procedure.
+
+### Validation
+- Verified the sync workflow design against the current repository structure and kept it isolated from unrelated local code changes.
+
+### Known Issues
+- The external manuscript source repo `/projectnb/ecog-eeg/cyw6/CANN_DDM_paper` has not been created or cloned yet in this workspace.
+
+### Checkpoint
+- This repo now has a documented path for keeping `docs/paper.pdf` synced from a separate LaTeX source repository.
