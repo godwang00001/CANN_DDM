@@ -34,3 +34,18 @@ This file records completed modeling, validation, and figure-generation work.
 
 ### Checkpoint
 - This repo now has a documented path for keeping `docs/paper.pdf` synced from a separate LaTeX source repository.
+
+## 2026-03-09
+
+### Completed
+- Added explicit project rules for when `./scripts/sync_paper.sh` should and should not be run.
+- Updated the manuscript-sync documentation and long-term state notes to reflect those trigger conditions.
+
+### Validation
+- Confirmed that manuscript sync should be tied to theory- and manuscript-grounded tasks rather than unrelated code-only work.
+
+### Known Issues
+- The mirrored `docs/paper.pdf` may still change outside these rule updates and should be committed separately when desired.
+
+### Checkpoint
+- The repo policy now states when manuscript refresh is expected before theory-grounded work.

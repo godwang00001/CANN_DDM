@@ -3,6 +3,8 @@
 ## Project Scope
 This repository contains simulation code for a theoretical neuroscience paper on decision-making dynamics. The model is intended to explain electrophysiological observations from decision-making tasks. Treat scientific correctness, reproducibility, and interpretability as higher priority than broad refactoring.
 
+This is not a greenfield AI-generated project. The theory, model design, and core simulation framework already exist and have been verified by the user. The default task is therefore to modify, update, and polish the current repository without casually reinterpreting or replacing its scientific logic.
+
 ## Project Structure & Module Organization
 Primary model code lives in `CANN_DDM_model_rate_based.py`. This is the main implementation of the coupled CANN/DDM rate model and should be treated as the authoritative simulation entry point unless the user says otherwise. Connectivity construction helpers live in `make_conn_mat_updated.py`; `make_conn_mat.py` should be treated as legacy or comparison code unless the user explicitly asks to modify it.
 
@@ -15,6 +17,7 @@ Recommended `docs/` layout:
 - `docs/TODO.md`: current pending modeling tasks, unresolved numerical issues, figure updates, and reproducible next steps. Prune completed items after recording outcomes in `PROGRESS.md`.
 - `docs/STATES.md`: bounded summary of validated long-term state only, such as authoritative files, active branch, trusted workflows, and currently accepted figure-generation paths.
 - `docs/EXPERIMENTS.md`: simulation experiment logs, parameter comparisons, coupling variants, and interpretation notes that should not be mixed directly into source files.
+- `docs/THEORY_UNDERSTANDING.md`: a Markdown document written from scratch that records the agent's current understanding of the user's theory and simulation framework. This file is not code documentation; it is a theory-understanding checkpoint for the user to review and correct.
 
 ## Environment & Core Framework
 The conda environment for running project code is `CANN_DDM_V2`. Prefer reproducible commands in the form `conda run -n CANN_DDM_V2 ...` when executing scripts or checks.
@@ -34,11 +37,17 @@ Use syntax checks before committing. Use targeted short simulations or notebook 
 ## Working Rules
 Be cautious by default.
 
+- Read and understand the existing theory implementation before editing nontrivial code.
+- Treat the current simulation framework as trusted unless the user explicitly asks to revisit a modeling assumption.
 - Do not change model equations, parameter semantics, coupling definitions, or numerical update rules unless the user explicitly asks for that.
 - Prefer small, local edits over structural rewrites.
+- Preserve scientific meaning over software-style cleanup when the two are in tension.
 - When behavior may change, call out the likely modeling consequence clearly.
+- Distinguish scientific changes from engineering or organizational changes when summarizing work.
+- Trace local consistency after edits: if a variable, state update, coupling term, or figure path changes, inspect where else it is used.
 - Preserve figure output locations and existing notebook workflows unless there is a strong reason to change them.
 - Avoid silently editing both the active and legacy connectivity files; change only the file relevant to the task.
+- If the authoritative source is ambiguous, determine whether the source of truth is the theory, the main implementation, or the figure notebooks before proceeding.
 
 ## Testing Guidelines
 This repo does not currently have a formal automated test suite. For code edits, use lightweight validation appropriate to the change:
@@ -55,6 +64,23 @@ Use concise imperative commit messages, for example: `refine bump-edge coupling 
 
 ## Operational Rules
 If interrupted by a new request, answer quickly when possible; otherwise record the deferred work in `docs/TODO.md` before resuming. Keep `docs/PROGRESS.md` append-only. Keep `docs/STATES.md` limited to validated current state rather than speculative notes.
+
+Before making substantial model changes, build enough local context to understand:
+- what theoretical component is being implemented
+- which file is authoritative for that component
+- whether the requested change is expected to alter numerical behavior or paper-facing outputs
+
+When reporting completed work, make provenance visible: state what changed, why it changed, what was validated, and whether simulation results or figure interpretation may shift.
+
+Maintain `docs/THEORY_UNDERSTANDING.md` as a living checkpoint of the agent's understanding of the user's theory and framework. Write it from scratch rather than copying code comments. Use it to summarize the conceptual model, component roles, intended behaviors, and open uncertainties. Revise it when the user's explanations deepen or correct the agent's interpretation.
+
+## Manuscript Sync Rules
+Treat `docs/paper.pdf` as a mirrored artifact built from the external LaTeX manuscript repo, not as the editing source of truth.
+
+- Run `./scripts/sync_paper.sh` before theory- or manuscript-grounded tasks when `docs/paper.pdf` may be stale.
+- Run `./scripts/sync_paper.sh` when the user explicitly asks to refresh or reread the manuscript.
+- Do not run `./scripts/sync_paper.sh` for unrelated code-only tasks that do not depend on manuscript content.
+- If theory, equations, or manuscript-grounded interpretation are central to the task, prefer syncing the paper first when feasible.
 
 ## NotebookLM References
 Use NotebookLM as the first lookup path for BrainPy, package behavior, framework semantics, or other project-specific documentation questions. Prefer querying this notebook before relying on memory:

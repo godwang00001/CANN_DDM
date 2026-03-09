@@ -38,6 +38,13 @@ PAPER_REPO=/path/to/CANN_DDM_paper ./scripts/sync_paper.sh
 2. build the PDF locally with `latexmk -pdf`
 3. copy the built PDF into `docs/paper.pdf`
 
+## When To Run It
+- before theory- or manuscript-grounded tasks when `docs/paper.pdf` may be stale
+- when explicitly asked to refresh or reread the manuscript
+- before updating `docs/THEORY_UNDERSTANDING.md` from the paper if the manuscript may have changed
+
+It is usually unnecessary for unrelated code-only tasks.
+
 ## Notes
 - Do not edit `docs/paper.pdf` directly.
 - Keep the LaTeX manuscript repo separate from this simulation repo; do not nest one Git repo inside the other.
