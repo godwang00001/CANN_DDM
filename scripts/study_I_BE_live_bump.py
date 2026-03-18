@@ -31,12 +31,12 @@ class CanonicalShiftedBumpIBEModel(CANN_DDM_model):
     """Reference variant matching the original canonical shifted-bump I_BE."""
 
     def get_current_I_BE(self, cue_R, cue_L, r_B, c_BE):
-        center = self.pos_to_idx(self.find_current_edge_location(self.r_E))
-        canonical_bump = self.bump_states_at_idx(
+        center = self.find_current_edge_location(self.r_E)
+        canonical_bump = self.bump_states(
             self.num_B,
             self.sigma_B,
             self.bump_geometry,
-            center,
+            center_pos=center,
         )
         return c_BE * (cue_R * canonical_bump + cue_L * (-canonical_bump))
 
@@ -52,12 +52,12 @@ class PeakNormalizedLiveBumpIBEModel(CANN_DDM_model):
     """Variant that rescales the live bump state to the canonical bump peak."""
 
     def get_current_I_BE(self, cue_R, cue_L, r_B, c_BE):
-        center = self.pos_to_idx(self.find_current_edge_location(self.r_E))
-        canonical_bump = self.bump_states_at_idx(
+        center = self.find_current_edge_location(self.r_E)
+        canonical_bump = self.bump_states(
             self.num_B,
             self.sigma_B,
             self.bump_geometry,
-            center,
+            center_pos=center,
         )
         live_peak = bm.max(r_B)
         canonical_peak = bm.max(canonical_bump)
@@ -70,16 +70,17 @@ class AlignedPeakNormalizedLiveBumpIBEModel(CANN_DDM_model):
     """Variant that aligns live r_B to the reference center and matches canonical peak."""
 
     def get_current_I_BE(self, cue_R, cue_L, r_B, c_BE):
-        edge_center = self.pos_to_idx(self.find_current_edge_location(self.r_E))
+        edge_center_pos = self.find_current_edge_location(self.r_E)
+        edge_center = self.pos_to_idx(edge_center_pos)
         bump_center = self.pos_to_idx(self.find_current_bump_location(r_B))
         shift = edge_center - bump_center
         aligned_r_B = bm.roll(r_B, shift)
 
-        canonical_bump = self.bump_states_at_idx(
+        canonical_bump = self.bump_states(
             self.num_B,
             self.sigma_B,
             self.bump_geometry,
-            edge_center,
+            center_pos=edge_center_pos,
         )
         live_peak = bm.max(aligned_r_B)
         canonical_peak = bm.max(canonical_bump)
@@ -93,7 +94,7 @@ def build_geometry_params() -> dict:
         "tau_E": 2,
         "c_EB": 0.3,
         "alpha_E": 1,
-        "sigma_E": 10,
+        "gamma_E": 10,
         "edge_type": "tanh",
         "offset": 0.0,
         "noise_scale_edge": 0.0,
@@ -141,9 +142,9 @@ def apply_figure_cues(model: CANN_DDM_model) -> None:
 
 
 def canonical_bump_from_edge(model: CANN_DDM_model, r_E: np.ndarray) -> np.ndarray:
-    center = model.pos_to_idx(model.find_current_edge_location(r_E))
+    center = model.find_current_edge_location(r_E)
     return np.asarray(
-        model.bump_states_at_idx(model.num_B, model.sigma_B, model.bump_geometry, center)
+        model.bump_states(model.num_B, model.sigma_B, model.bump_geometry, center_pos=center)
     )
 
 

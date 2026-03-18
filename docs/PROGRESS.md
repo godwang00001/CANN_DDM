@@ -73,7 +73,7 @@ This file records completed modeling, validation, and figure-generation work.
 - Reorganized `CANN_DDM_model_rate_based.py` without changing the public constructor or notebook-facing simulation entrypoints.
 - Introduced a shared geometry/config architecture so the public setup path now centers on `geometry` with `num_units`, `coding_limit`, `coding_frac`, and `clamp_frac`.
 - Moved pure config and geometry parsing into `rate_model_config.py`.
-- Updated `make_conn_mat_updated.py` so its active interface consumes shared derived geometry instead of the old user-facing `k0`, `k1`, `k2` arguments.
+- Updated `make_conn_mat_updated.py` so its active interface consumes shared derived geometry instead of the old user-facing discretization arguments.
 - Added `scripts/run_rate_model_geometry_regression.py` to compare the legacy configuration path against the new shared-geometry path under the fixed-seed cue-driven Figure 2 microdynamics condition.
 - Migrated `figures_code/fig2_micro_dyn_scheme.ipynb` to the new top-level `geometry` and `num_units` setup.
 

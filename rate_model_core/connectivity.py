@@ -217,7 +217,7 @@ def make_bump_to_edge_conn_mat(
 
 def make_edge_conn_mat(
     num,
-    sigma,
+    gamma,
     geometry,
     edge_type='tanh',
     offset=0,
@@ -228,13 +228,12 @@ def make_edge_conn_mat(
     The recurrent DoG kernel currently uses fixed implementation constants
     `EDGE_KERNEL_BASE_EXC_SIGMA` and `EDGE_KERNEL_INHIBITION_WIDTH_RATIO`.
     These set the numerical kernel shape used to construct `J_EE`; they are
-    not the same as the model's public edge-profile/readout parameter `sigma`.
+    not the same as the model's public edge-profile/readout parameter `gamma`.
     """
-    k0 = geometry.k0
     clamp_frac = geometry.clamp_frac
+    center_idx = num // 2
 
-    if edge_type == 'tanh':
-        sigma = 4 * sigma / bm.exp(1)
+    gamma_effective = 4 * gamma / bm.exp(1) if edge_type == 'tanh' else gamma
 
     def _base_kernel_matrix(local_clamp_frac, local_offset):
         num_interior = int(num * (1 - local_clamp_frac))
@@ -249,13 +248,13 @@ def make_edge_conn_mat(
         return make_conn_mat_from_kernel(num, kernel, normed=True)
 
     def _match_linear_drive(J_EE_local):
-        theta = bm.linspace(-bm.pi / 2, bm.pi / 2, num)
-        real_r = edge_states(num, sigma, geometry=geometry, edge_type=edge_type)
+        theta = bm.linspace(geometry.theta_min, geometry.theta_max, num)
+        real_r = edge_states(num, gamma, geometry=geometry, edge_type=edge_type, center_pos=0.0)
         U0 = J_EE_local @ real_r
-        th = theta[k0 - 10:k0 + 10]
-        y = U0[k0 - 10:k0 + 10]
+        th = theta[center_idx - 10:center_idx + 10]
+        y = U0[center_idx - 10:center_idx + 10]
         A, _ = bm.polyfit(th, y, deg=1)
-        return -sigma / A
+        return -gamma_effective / A
 
     J_EE = _base_kernel_matrix(clamp_frac, offset)
     J0 = _match_linear_drive(J_EE)

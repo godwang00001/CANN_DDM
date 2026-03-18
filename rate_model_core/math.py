@@ -5,29 +5,27 @@ def sigmoid(x):
     return 1 / (1 + bm.exp(-x))
 
 
-def edge_states(num, sigma, geometry, edge_type='tanh'):
+def theta_grid(num, geometry):
+    if num <= 1:
+        return bm.asarray([geometry.theta_min])
+    return bm.linspace(geometry.theta_min, geometry.theta_max, num)
+
+def edge_states(num, gamma, geometry, edge_type='tanh', center_pos=0.0):
     """
     Return the canonical edge profile on the discrete neuron grid.
     """
-    k0 = geometry.k0
-    k1 = geometry.k1
-    k2 = geometry.k2
-    k = bm.arange(num)
+    theta = theta_grid(num, geometry)
+    theta_rel = theta - center_pos
     if edge_type == 'Laplace':
-        return bm.exp(-bm.exp(sigma * (bm.pi / (k2 - k1)) * (k - k0)))
+        return bm.exp(-bm.exp(gamma * theta_rel))
     elif edge_type == 'tanh':
-        sigma_prime = 4 * sigma / bm.exp(1)
-        return sigmoid(-sigma_prime * bm.pi / (k2 - k1) * (k - k0))
+        gamma_sigma = 4 * gamma / bm.exp(1)
+        return sigmoid(-gamma_sigma * theta_rel)
     else:
         raise ValueError('Edge type should be either Laplace or tanh.')
 
 
-def bump_states(num, sigma, geometry):
-    return bump_states_at_idx(num, sigma, geometry, geometry.k0)
-
-
-def bump_states_at_idx(num, sigma, geometry, center_idx):
-    k1 = geometry.k1
-    k2 = geometry.k2
-    k = bm.arange(num)
-    return bm.exp(-(bm.pi / (bm.sqrt(2) * sigma * (k2 - k1))) ** 2 * (k - center_idx) ** 2)
+def bump_states(num, sigma, geometry, center_pos=0.0):
+    theta = theta_grid(num, geometry)
+    theta_rel = theta - center_pos
+    return bm.exp(-0.5 * (theta_rel / sigma) ** 2)

@@ -8,7 +8,7 @@ class EdgePopConfig:
     legacy_num_E: int | None = None
     tau_E: float = 1
     alpha_E: float = 1
-    sigma_E: float = 1
+    gamma_E: float = 1
     noise_scale_edge: float = 0
     clamp_frac_E: float = 0.15
     edge_type: str = 'Laplace'
@@ -49,7 +49,7 @@ class DecisionSpaceConfig:
     drift_rate: float = 0.5
     noise_scale: float = 0.5
     dt_DDM: float = 25
-    x0: float | None = None
+    x0: float = 0.5
     seed: int | None = None
 
 
@@ -57,7 +57,7 @@ class DecisionSpaceConfig:
 class NeuralGeometryConfig:
     num_units: int
     coding_limit: float = np.pi / 2
-    coding_frac: float | None = None
+    coding_frac: float | None = 0.3
     clamp_frac: float = 0.15
 
 
@@ -69,11 +69,12 @@ class DerivedGeometry:
     clamp_frac: float
     theta_min: float
     theta_max: float
+    coding_theta_min: float
+    coding_theta_max: float
     clamp_side_width: int
     left_gap_width: int
     right_gap_width: int
     coding_width: int
-    k0: int
     k1: int
     k2: int
 
@@ -83,7 +84,7 @@ def parse_edge_config(edge_params):
         legacy_num_E=edge_params.get('num_E'),
         tau_E=edge_params.get('tau_E', EdgePopConfig.tau_E),
         alpha_E=edge_params.get('alpha_E', EdgePopConfig.alpha_E),
-        sigma_E=edge_params.get('sigma_E', EdgePopConfig.sigma_E),
+        gamma_E=edge_params.get('gamma_E', EdgePopConfig.gamma_E),
         noise_scale_edge=edge_params.get('noise_scale_edge', EdgePopConfig.noise_scale_edge),
         clamp_frac_E=edge_params.get('clamp_frac_E', EdgePopConfig.clamp_frac_E),
         edge_type=edge_params.get('edge_type', EdgePopConfig.edge_type),
@@ -151,11 +152,10 @@ def parse_geometry_config(geometry_params, edge_config: EdgePopConfig, bump_conf
         clamp_frac = edge_config.clamp_frac_E
         if not np.isclose(clamp_frac, bump_config.clamp_frac_B):
             raise ValueError("Legacy clamp fractions must match when shared geometry is implicit")
-        coding_frac = 1 - clamp_frac
         return NeuralGeometryConfig(
             num_units=num_units,
             coding_limit=np.pi / 2,
-            coding_frac=coding_frac,
+            coding_frac=NeuralGeometryConfig.coding_frac,
             clamp_frac=clamp_frac,
         )
 
@@ -170,7 +170,7 @@ def parse_geometry_config(geometry_params, edge_config: EdgePopConfig, bump_conf
         raise ValueError("geometry.num_units must match legacy bump_pop.num_B")
 
     if coding_frac is None:
-        coding_frac = 1 - clamp_frac
+        coding_frac = NeuralGeometryConfig.coding_frac
 
     return NeuralGeometryConfig(
         num_units=parsed_num_units,
@@ -207,20 +207,23 @@ def build_geometry(config: NeuralGeometryConfig) -> DerivedGeometry:
     right_gap_width = remaining - left_gap_width
     k1 = clamp_side_width + left_gap_width
     k2 = k1 + coding_width
-    k0 = config.num_units // 2
+    coding_theta_min = -config.coding_limit
+    coding_theta_max = config.coding_limit
+    full_theta_limit = config.coding_limit / config.coding_frac
 
     return DerivedGeometry(
         num_units=config.num_units,
         coding_limit=config.coding_limit,
         coding_frac=config.coding_frac,
         clamp_frac=config.clamp_frac,
-        theta_min=-config.coding_limit,
-        theta_max=config.coding_limit,
+        theta_min=-full_theta_limit,
+        theta_max=full_theta_limit,
+        coding_theta_min=coding_theta_min,
+        coding_theta_max=coding_theta_max,
         clamp_side_width=clamp_side_width,
         left_gap_width=left_gap_width,
         right_gap_width=right_gap_width,
         coding_width=coding_width,
-        k0=k0,
         k1=k1,
         k2=k2,
     )

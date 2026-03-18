@@ -26,7 +26,7 @@ def build_legacy_params() -> dict:
         "tau_E": 2,
         "c_EB": 0.3,
         "alpha_E": 1,
-        "sigma_E": 10,
+        "gamma_E": 10,
         "clamp_frac_E": 0.1,
         "edge_type": "tanh",
         "offset": 0.0,
@@ -69,7 +69,7 @@ def build_geometry_params() -> dict:
     params["geometry"] = {
         "coding_limit": float(np.pi / 2),
         "num_units": 1024,
-        "coding_frac": 0.9,
+        "coding_frac": 0.3,
         "clamp_frac": 0.1,
     }
     return params

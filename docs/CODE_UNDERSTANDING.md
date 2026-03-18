@@ -24,13 +24,14 @@ The public constructor still takes `CANN_params`, but the intended active setup 
 
 Internally this is converted into a shared derived geometry with:
 
-- `k0`
 - `k1`
 - `k2`
 - `theta_min`
 - `theta_max`
+- `coding_theta_min`
+- `coding_theta_max`
 
-`k0`, `k1`, and `k2` are now internal discretization variables, not user-facing configuration inputs.
+`k1` and `k2` remain internal discretization markers for the coding-region boundaries. The canonical profile center is no longer stored as a geometry index; profile construction is now centered directly in theta space.
 
 ## Population Setup
 ### Edge Population
@@ -43,7 +44,7 @@ Internally this is converted into a shared derived geometry with:
 The edge readout is:
 
 - `theta_E`: inferred edge location
-- `x_E = pos_to_evidence(theta_E, sigma_E)`
+- `x_E = pos_to_evidence(theta_E, gamma_E)`
 
 The active edge nonlinearity is still:
 
@@ -61,7 +62,7 @@ $$
 The bump readout is:
 
 - `theta_B`: inferred bump location
-- `x_B = pos_to_evidence(theta_B, sigma_E)`
+- `x_B = pos_to_evidence(theta_B, gamma_E)`
 
 The active bump nonlinearity is still the normalized quadratic CANN form:
 
@@ -78,7 +79,7 @@ The current implementation still contains fixed edge-kernel construction constan
 - `EDGE_KERNEL_BASE_EXC_SIGMA = 1.0`
 - `EDGE_KERNEL_INHIBITION_WIDTH_RATIO = 1.2`
 
-These are implementation constants for constructing `J_EE`, not the public edge readout/profile parameter `sigma_E`.
+These are implementation constants for constructing `J_EE`, not the public edge readout/profile parameter `gamma_E`.
 
 ### `J_BB`
 `make_bump_conn_mat()` now takes explicit bump-kernel controls:
@@ -141,9 +142,8 @@ Canonical population profiles now live in `rate_model_core/math.py`:
 - `sigmoid()`
 - `edge_states()`
 - `bump_states()`
-- `bump_states_at_idx()`
 
-The model file keeps thin wrappers so the class API stays stable while the formula source of truth lives in the shared math module.
+Both `edge_states()` and `bump_states()` are now theta-space constructors with an optional `center_pos` argument. The model file keeps thin wrappers so the class API stays stable while the formula source of truth lives in the shared math module.
 
 ## Geometry / Readout Helpers
 Pure geometry and utility helpers now live in `rate_model_core/utils.py`:
@@ -170,6 +170,7 @@ Important current implementation fact:
 - `cue_R_all` and `cue_L_all` drive the neural simulation
 - `x_traj` is still only a reference trajectory
 - the neural circuit is not directly forced to follow `x_traj`
+- `run_simulation()` now initializes the bump and edge states directly at `theta^* = evidence_to_pos(x0, gamma_E)` and no longer uses external initialization inputs `I1` / `I2`
 
 ## Regression Guardrails
 The current structure-preserving guardrails are:
@@ -177,7 +178,7 @@ The current structure-preserving guardrails are:
 - `scripts/run_rate_model_smoke.py`
 - `scripts/run_rate_model_geometry_regression.py`
 
-The smoke test checks a deterministic no-cue, no-population-noise stability condition. The geometry regression compares the legacy config path against the new shared-geometry path under a fixed-seed Figure 2 microdynamics condition.
+The smoke test and geometry regression remain the main structure-preserving checks, but their old assumptions should now be interpreted carefully because the model initialization has changed: the circuit is now started directly at the `theta^*` implied by `x0` rather than being nudged there by temporary external inputs.
 
 ## Current Safe Baseline
 The current safe baseline for the coupling operators is:

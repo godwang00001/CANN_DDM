@@ -42,7 +42,7 @@ def build_smoke_test_params() -> dict:
         "tau_E": 2,
         "c_EB": 0.3,
         "alpha_E": 1,
-        "sigma_E": 10,
+        "gamma_E": 10,
         "edge_type": "tanh",
         "noise_scale_edge": 0.0,
     }

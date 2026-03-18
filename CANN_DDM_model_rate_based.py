@@ -26,7 +26,6 @@ from rate_model_core.config import (
 )
 from rate_model_core.math import (
     bump_states as canonical_bump_states,
-    bump_states_at_idx as canonical_bump_states_at_idx,
     edge_states as canonical_edge_states,
     sigmoid as canonical_sigmoid,
 )
@@ -79,7 +78,8 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.clamp_frac = self.geometry.clamp_frac
         self.theta_min = self.geometry.theta_min
         self.theta_max = self.geometry.theta_max
-        self.k0 = self.geometry.k0
+        self.coding_theta_min = self.geometry.coding_theta_min
+        self.coding_theta_max = self.geometry.coding_theta_max
         self.k1 = self.geometry.k1
         self.k2 = self.geometry.k2
 
@@ -91,7 +91,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.num_E = self.geometry.num_units
         self.tau_E = config.tau_E
         self.alpha_E = config.alpha_E
-        self.sigma_E = config.sigma_E
+        self.gamma_E = config.gamma_E
         self.noise_scale_edge = config.noise_scale_edge
         self.clamp_frac_E = self.geometry.clamp_frac
         self.edge_type = config.edge_type
@@ -105,7 +105,6 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
 
         # Derived geometry
         self.edge_geometry = self.geometry
-        self.edge_k0 = self.edge_geometry.k0
         self.edge_k1 = self.edge_geometry.k1
         self.edge_k2 = self.edge_geometry.k2
         self.clamp_width = int(self.clamp_frac_E * self.num_E)
@@ -113,7 +112,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         # Static precomputations
         self.J_EE, self.beta_E = make_edge_conn_mat(
             self.num_E,
-            self.sigma_E,
+            self.gamma_E,
             geometry=self.edge_geometry,
             edge_type=self.edge_type,
             offset=self.offset,
@@ -125,7 +124,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             kernel_shift=self.eb_kernel_shift,
             kernel_gain=self.eb_kernel_gain,
         )
-        self.r_E0 = self.edge_states(self.num_E, self.sigma_E, self.edge_geometry, self.edge_type)
+        self.r_E0 = self.edge_states(self.num_E, self.gamma_E, self.edge_geometry, self.edge_type)
 
         # Dynamic state
         self.c_EB_dym = bm.Variable(bm.zeros(1))
@@ -162,7 +161,6 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
 
         # Derived geometry
         self.bump_geometry = self.geometry
-        self.bump_k0 = self.bump_geometry.k0
         self.bump_k1 = self.bump_geometry.k1
         self.bump_k2 = self.bump_geometry.k2
         self.rho_B = bm.pi / self.num_B
@@ -243,31 +241,40 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
     # ------------------------------------------------------------------
     # Canonical state/profile builders
     # ------------------------------------------------------------------
-    def edge_states(self, num, sigma, geometry, type='Laplace'):
+    def edge_states(self, num, gamma, geometry, type='Laplace', center_pos=0.0):
         """
-        Return the canonical edge profile in neuron-index space.
+        Return the canonical edge profile in theta space.
         """
-        return canonical_edge_states(num, sigma, geometry, edge_type=type)
+        return canonical_edge_states(num, gamma, geometry, edge_type=type, center_pos=center_pos)
 
-    def bump_states(self, num, sigma, geometry):
-        return canonical_bump_states(num, sigma, geometry)
-
-    def bump_states_at_idx(self, num, sigma, geometry, center_idx):
-        return canonical_bump_states_at_idx(num, sigma, geometry, center_idx)
-
-    def get_bump_stimulus_by_pos(self, pos):
-        k0 = self.pos_to_idx(pos)
-        # bump stimulus lives on the bump population size (num_B)
-        return self.bump_states_at_idx(self.num_B, self.sigma_B, self.bump_geometry, k0)
+    def bump_states(self, num, sigma, geometry, center_pos=0.0):
+        return canonical_bump_states(num, sigma, geometry, center_pos=center_pos)
 
     def get_edge_stimulus_by_pos(self, pos, edge_type='Laplace'):
-        center_idx = self.pos_to_idx(pos)
-        geometry = type(
-            "GeometryProxy",
-            (),
-            {"k0": center_idx, "k1": self.edge_geometry.k1, "k2": self.edge_geometry.k2},
-        )()
-        return self.edge_states(self.num_E, self.sigma_E, geometry, edge_type)
+        return self.edge_states(self.num_E, self.gamma_E, self.edge_geometry, edge_type, center_pos=pos)
+
+    def initialize_state(self, pos_B, pos_E=None):
+        if pos_E is None:
+            pos_E = pos_B
+        self.r_B[:] = self.bump_states(self.num_B, self.sigma_B, self.bump_geometry, center_pos=pos_B)
+        self.r_E[:] = self.get_edge_stimulus_by_pos(pos_E, self.edge_type)
+        self.theta_B[:] = self.find_current_bump_location(self.r_B)
+        self.theta_E[:] = self.find_current_edge_location(self.r_E)
+        self.x_B[:] = self.pos_to_evidence(self.theta_B, self.gamma_E)
+        self.x_E[:] = self.pos_to_evidence(self.theta_E, self.gamma_E)
+        self.I_BB[:] = 0.
+        self.I_EE[:] = 0.
+        self.I_BE[:] = 0.
+        self.I_EB[:] = 0.
+        self.I_B_noise[:] = 0.
+        self.I_E_noise[:] = 0.
+        self.Iext_B[:] = 0.
+        self.Iext_E[:] = 0.
+        self.c_BE_dyn[:] = 0.
+        self.c_EB_dym[:] = 0.
+        self.cue_R[:] = 0.
+        self.cue_L[:] = 0.
+        self.hit_boundary[:] = False
 
     # ------------------------------------------------------------------
     # Nonlinearities and static helpers
@@ -308,14 +315,14 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         return util_pos_to_idx(pos, self.geometry)
 
     def pos_to_evidence(self, pos, s):
-        return util_pos_to_evidence(pos, self.boundary, self.geometry.theta_max, s)
+        return util_pos_to_evidence(pos, self.boundary, self.geometry.coding_theta_max, s)
 
     def evidence_to_pos(self, evidence, s):
-        return util_evidence_to_pos(evidence, self.boundary, self.geometry.theta_max, s)
+        return util_evidence_to_pos(evidence, self.boundary, self.geometry.coding_theta_max, s)
 
     def theta_req(self):
-        theta_req_pos = lambda theta: 1 / (self.sigma_E * self.dt_DDM) * bm.log(1 + self.dx / self.pos_to_evidence(theta, self.sigma_E))
-        theta_req_neg = lambda theta: -1 / (self.sigma_E * self.dt_DDM) * bm.log(1 - self.dx / self.pos_to_evidence(theta, self.sigma_E))
+        theta_req_pos = lambda theta: 1 / (self.gamma_E * self.dt_DDM) * bm.log(1 + self.dx / self.pos_to_evidence(theta, self.gamma_E))
+        theta_req_neg = lambda theta: -1 / (self.gamma_E * self.dt_DDM) * bm.log(1 - self.dx / self.pos_to_evidence(theta, self.gamma_E))
         theta_req = lambda theta: 0.5 * (theta_req_pos(theta) + theta_req_neg(theta))
         return theta_req
 
@@ -400,13 +407,13 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         """
         return util_get_x_traj(t_start, dx, dt_DDM, x0, cue_R_all, cue_L_all, boundary)
 
-    def get_pos_offset(self, x0, s_E, tol=1e-4, max_iter=50, progress=False):
+    def get_pos_offset(self, x0, gamma_E, tol=1e-4, max_iter=50, progress=False):
         """
         Find the position offset for the edge population using a continuous ternary search
         on a unimodal objective f(offset) = (theta_E - theta_B)^2. This is more efficient
         than bisection for unimodal functions and does not require integer offsets.
         """
-        pos = self.evidence_to_pos(x0, s_E)
+        pos = self.evidence_to_pos(x0, gamma_E)
         left = -np.pi / 2 - pos
         right = np.pi / 2 - pos
 
@@ -478,7 +485,11 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         pos = self.find_current_edge_location(r_E)
         stimulus = (self.W_EB @ r_E)
         zeros = bm.zeros_like(stimulus)
-        return bm.where((pos >= self.geometry.theta_min) & (pos <= self.geometry.theta_max), c_EB * stimulus, zeros)
+        return bm.where(
+            (pos >= self.geometry.coding_theta_min) & (pos <= self.geometry.coding_theta_max),
+            c_EB * stimulus,
+            zeros,
+        )
 
     # ------------------------------------------------------------------
     # Runtime dynamics and simulation entrypoints
@@ -505,9 +516,12 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.r_E[:] = r_E
         self.theta_B[:] = self.find_current_bump_location(self.r_B)
         self.theta_E[:] = self.find_current_edge_location(self.r_E)
-        self.x_B[:] = self.pos_to_evidence(self.theta_B, self.sigma_E)
-        self.x_E[:] = self.pos_to_evidence(self.theta_E, self.sigma_E)
-        hit_boundary = bm.logical_or(self.theta_E >= self.geometry.theta_max, self.theta_E <= self.geometry.theta_min)
+        self.x_B[:] = self.pos_to_evidence(self.theta_B, self.gamma_E)
+        self.x_E[:] = self.pos_to_evidence(self.theta_E, self.gamma_E)
+        hit_boundary = bm.logical_or(
+            self.theta_E >= self.geometry.coding_theta_max,
+            self.theta_E <= self.geometry.coding_theta_min,
+        )
         # assign boolean array directly (shapes should match: both length 1)
         self.hit_boundary[:] = bm.where(self.hit_boundary, self.hit_boundary, hit_boundary)
 
@@ -516,22 +530,15 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.Iext_E[:] = 0.
 
     def run_simulation(self, mon_vars, pos_offset=0, progress_bar=True, dt=1., get_RT=False):
-        pos_B = self.evidence_to_pos(self.x0, self.sigma_E)
-        pos_E = self.evidence_to_pos(self.x0, self.sigma_E)
-        I1 = self.get_bump_stimulus_by_pos(pos_B)
-        I2 = self.get_edge_stimulus_by_pos(pos_E + pos_offset, self.edge_type)
-        I1 = 0
-        I2 = 0
+        pos_init = self.evidence_to_pos(self.x0, self.gamma_E)
+        self.initialize_state(pos_init, pos_init + pos_offset)
         dur1 = self.dur1
         dur2 = self.dur2
         t_start = self.t_start
 
-        Iext_B, duration = bp.inputs.section_input(values=[I1, 0], durations=[dur1 / dt, dur2 / dt], return_length=True, dt=dt)
-        Iext_E, duration = bp.inputs.section_input(values=[I2, 0], durations=[dur1 / dt, dur2 / dt], return_length=True, dt=dt)
         runner = bp.DSRunner(
             self,
-            inputs=[('Iext_B', Iext_B, 'iter'), ('Iext_E', Iext_E, 'iter'),
-                    ('cue_R', self.cue_R_all, 'iter', '='),
+            inputs=[('cue_R', self.cue_R_all, 'iter', '='),
                     ('cue_L', self.cue_L_all, 'iter', '=')],
             monitors=mon_vars,
             dyn_vars=self.vars(),

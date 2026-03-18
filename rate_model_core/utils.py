@@ -3,35 +3,44 @@ import brainpy.math as bm
 
 
 def idx_to_pos(idx, geometry):
-    return bm.where(
-        idx < geometry.k1,
-        geometry.theta_min,
-        bm.where(
-            idx > geometry.k2,
-            geometry.theta_max,
-            geometry.theta_min
-            + (idx - geometry.k1) / (geometry.k2 - geometry.k1) * (geometry.theta_max - geometry.theta_min),
-        ),
-    )
+    idx = bm.asarray(idx)
+    if geometry.num_units <= 1:
+        return bm.asarray(geometry.theta_min)
+    return geometry.theta_min + idx / (geometry.num_units - 1) * (geometry.theta_max - geometry.theta_min)
 
 
 def pos_to_idx(pos, geometry):
     pos = bm.asarray(pos)
     pos = bm.clip(pos, geometry.theta_min, geometry.theta_max)
-    idx = geometry.k1 + (
+    idx = (
         (pos - geometry.theta_min)
         / (geometry.theta_max - geometry.theta_min)
-        * (geometry.k2 - geometry.k1)
+        * (geometry.num_units - 1)
     )
     return idx
 
 
 def pos_to_evidence(pos, boundary, theta_max, s):
-    return boundary * bm.exp(s * (pos - theta_max))
+    pos = bm.asarray(pos)
+    theta_min = -theta_max
+    interior = boundary * bm.exp(s * (pos - theta_max))
+    return bm.where(
+        pos <= theta_min,
+        0.0,
+        bm.where(pos >= theta_max, boundary, interior),
+    )
 
 
 def evidence_to_pos(evidence, boundary, theta_max, s):
-    return theta_max + bm.log(evidence / boundary) / s
+    evidence = bm.asarray(evidence)
+    theta_min = -theta_max
+    clipped = bm.clip(evidence, 1e-12, boundary)
+    interior = theta_max + bm.log(clipped / boundary) / s
+    return bm.where(
+        evidence <= 0,
+        theta_min,
+        bm.where(evidence >= boundary, theta_max, interior),
+    )
 
 
 def get_RT(prep_time, hit_boundary_trace):

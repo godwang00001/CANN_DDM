@@ -25,12 +25,12 @@ from CANN_DDM_model_rate_based import CANN_DDM_model
 
 class CanonicalShiftedBumpIBEModel(CANN_DDM_model):
     def get_current_I_BE(self, cue_R, cue_L, r_B, c_BE):
-        center = self.pos_to_idx(self.find_current_edge_location(self.r_E))
-        canonical_bump = self.bump_states_at_idx(
+        center = self.find_current_edge_location(self.r_E)
+        canonical_bump = self.bump_states(
             self.num_B,
             self.sigma_B,
             self.bump_geometry,
-            center,
+            center_pos=center,
         )
         return c_BE * (cue_R * canonical_bump + cue_L * (-canonical_bump))
 
@@ -67,7 +67,7 @@ def build_params(
             "tau_E": 2,
             "c_EB": c_eb,
             "alpha_E": 1,
-            "sigma_E": 10,
+            "gamma_E": 10,
             "edge_type": "tanh",
             "offset": 0.0,
             "noise_scale_edge": 0.0,
