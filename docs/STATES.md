@@ -17,10 +17,13 @@ This file records validated long-term project state only.
   - `rate_model_core/math.py`
   - `rate_model_core/utils.py`
 - `CANN_DDM_model_rate_based.py` remains the main model/dynamics entrypoint used by the notebooks.
+- The active runtime `J_EE` builder in `rate_model_core/connectivity.py` now uses reflected boundaries rather than truncation.
 - The trusted current coupling baseline uses explicit kernel operators with:
   - `W_EB`: `eb_kernel_mode='simple'`
   - `W_BE`: `be_kernel_mode='simple'`
 - `scripts/run_rate_model_smoke.py` is the current deterministic no-cue regression guard for structure-preserving refactors.
 - `scripts/run_rate_model_geometry_regression.py` is the current fixed-seed cue-driven regression guard for checking that the new shared-geometry path reproduces the legacy configuration behavior.
+- `scripts/compare_edge_builder_drift.py` is the current operator-level diagnostic for edge drift, Goldstone-mode residuals, and static readout bias.
 - `scripts/study_I_BE_live_bump.py` and `scripts/scan_live_bump_stability.py` are the current exploratory study scripts for coupling-mechanism and stability work.
 - `figures_code/fig2_micro_dyn_scheme.ipynb` has been migrated to the shared `geometry` / `num_units` setup.
+- `figures/figure2/edge_operator_goldstone_projection_reflect.png` records the reflected-vs-truncated edge-operator comparison that motivated the current `J_EE` default.

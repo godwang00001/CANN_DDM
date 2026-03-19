@@ -13,7 +13,7 @@ class EdgePopConfig:
     clamp_frac_E: float = 0.15
     edge_type: str = 'Laplace'
     c_EB: float = 1.
-    offset: float = 0
+    offset: float = 0.0029
     eb_kernel_mode: str = 'simple'
     eb_kernel_sigma: float = 1.0
     eb_kernel_shift: float = 1.0
@@ -43,8 +43,7 @@ class BumpPopConfig:
 @dataclass(frozen=True)
 class DecisionSpaceConfig:
     t_start: int = 200
-    dur1: int = 100
-    dur2: int = 1000
+    dur: int = 1100
     boundary: float = 1
     drift_rate: float = 0.5
     noise_scale: float = 0.5
@@ -121,8 +120,7 @@ def parse_bump_config(bump_params):
 def parse_decision_space_config(decision_space_params):
     return DecisionSpaceConfig(
         t_start=decision_space_params.get('t_start', DecisionSpaceConfig.t_start),
-        dur1=decision_space_params.get('dur1', DecisionSpaceConfig.dur1),
-        dur2=decision_space_params.get('dur2', DecisionSpaceConfig.dur2),
+        dur=decision_space_params.get('dur', DecisionSpaceConfig.dur),
         boundary=decision_space_params.get('boundary', DecisionSpaceConfig.boundary),
         drift_rate=decision_space_params.get('drift_rate', DecisionSpaceConfig.drift_rate),
         noise_scale=decision_space_params.get('noise_scale', DecisionSpaceConfig.noise_scale),

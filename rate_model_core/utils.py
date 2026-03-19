@@ -50,18 +50,17 @@ def get_RT(prep_time, hit_boundary_trace):
     return None
 
 
-def generate_cues_input(dur1, dur2, dt_DDM, p, t_start, seed=None):
-    num1 = int(dur1 / dt_DDM)
-    num2 = int(dur2 / dt_DDM)
+def generate_cues_input(dur, dt_DDM, p, t_start, seed=None):
+    num_steps = int(dur / dt_DDM)
     rng = np.random.default_rng(seed)
-    cue_R = rng.binomial(1, p, num1 + num2)
+    cue_R = rng.binomial(1, p, num_steps)
     cue_R[:int(t_start / dt_DDM)] = 0
     cue_L = np.zeros_like(cue_R)
     cue_L = 1 - cue_R
     cue_L[:int(t_start / dt_DDM)] = 0
-    cue_R_all = np.zeros(dur1 + dur2)
+    cue_R_all = np.zeros(dur)
     cue_R_all[0::int(dt_DDM)] = cue_R
-    cue_L_all = np.zeros(dur1 + dur2)
+    cue_L_all = np.zeros(dur)
     cue_L_all[0::int(dt_DDM)] = cue_L
     return cue_L_all, cue_R_all
 

@@ -66,7 +66,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             raise ValueError("CANN_params is required")
 
         # Initialize integration function
-        assert self.num_E == self.num_B, "The number of neurons in the edge and bump population must be the same"
+        assert self.num_E == self.num_B, "The exposed edge and bump population sizes must be the same"
         super(CANN_DDM_model, self).__init__(size=self.num_E, **kwargs)
         self.integral = bp.odeint(self.derivative)
 
@@ -116,6 +116,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             geometry=self.edge_geometry,
             edge_type=self.edge_type,
             offset=self.offset,
+            alpha=self.alpha_E,
         )
         self.W_EB = make_edge_to_bump_conn_mat(
             self.num_E,
@@ -202,8 +203,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         """
         # Raw parameters
         self.t_start = config.t_start  # unit: ms, time to start encoding the evidence since the simulation begin
-        self.dur1 = config.dur1  # unit: ms, duration of the period to initiate the network states
-        self.dur2 = config.dur2  # unit: ms, remove any external input after the network states are initiated
+        self.dur = config.dur  # unit: ms, total simulation duration
         self.boundary = config.boundary
         self.drift_rate = config.drift_rate
         self.noise_scale = config.noise_scale
@@ -216,8 +216,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
 
         # Static precomputations
         self.cue_L_all, self.cue_R_all = self.generate_cues_input(
-            self.dur1,
-            self.dur2,
+            self.dur,
             self.dt_DDM,
             self.p,
             self.t_start,
@@ -374,8 +373,28 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         )
         return peak_idx + offset
 
+    def _interpolated_level_crossing_idx(self, values, level):
+        below = values <= level
+        has_crossing = bm.any(below)
+        right_idx = bm.where(has_crossing, bm.argmax(below.astype(int)), len(values) - 1)
+        left_idx = bm.maximum(right_idx - 1, 0)
+
+        left_val = values[left_idx]
+        right_val = values[right_idx]
+        denominator = right_val - left_val
+        frac = bm.where(
+            bm.abs(denominator) > 1e-10,
+            (level - left_val) / denominator,
+            0.0,
+        )
+        return bm.clip(left_idx + frac, 0.0, float(len(values) - 1))
+
     def find_current_edge_location(self, r_E):
-        # Find the maximum gradient using argmax of absolute difference
+        if self.edge_type == 'tanh':
+            interpolated_idx = self._interpolated_level_crossing_idx(r_E, 0.5)
+            return self.idx_to_pos(interpolated_idx)
+
+        # Fallback for non-tanh edges until their crossing level is calibrated.
         diff_r_E = bm.abs(bm.diff(r_E))
         interpolated_idx = self._interpolated_peak_idx(diff_r_E)
         return self.idx_to_pos(interpolated_idx)
@@ -394,8 +413,8 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
     # ------------------------------------------------------------------
     # Cue-generation and reference-trajectory utilities
     # ------------------------------------------------------------------
-    def generate_cues_input(self, dur1, dur2, dt_DDM, p, t_start, seed=None):
-        return util_generate_cues_input(dur1, dur2, dt_DDM, p, t_start, seed=seed)
+    def generate_cues_input(self, dur, dt_DDM, p, t_start, seed=None):
+        return util_generate_cues_input(dur, dt_DDM, p, t_start, seed=seed)
 
     def get_x_traj(self, t_start, dx, dt_DDM, x0,
                    cue_R_all, cue_L_all, boundary):
@@ -508,8 +527,16 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.c_BE_dyn[:] = 1 * self.c_BE
         self.I_E_noise[:] = self.noise_scale_edge * bm.random.normal(0, 1, self.num_E)
         self.I_B_noise[:] = self.noise_scale_bump * bm.random.normal(0, 1, self.num_B)
-        self.I_BE[:] = ~self.hit_boundary * bm.where(_t < self.t_start, 0, self.get_current_I_BE(self.cue_R, self.cue_L, self.r_B, self.c_BE_dyn))
-        self.I_EB[:] = ~self.hit_boundary * bm.where(_t < self.t_start, 0, self.get_current_I_EB(self.r_E, self.c_EB))
+        self.I_BE[:] = ~self.hit_boundary * bm.where(
+            _t < self.t_start,
+            0,
+            self.get_current_I_BE(self.cue_R, self.cue_L, self.r_B, self.c_BE_dyn),
+        )
+        self.I_EB[:] = ~self.hit_boundary * bm.where(
+            _t < self.t_start,
+            0,
+            self.get_current_I_EB(self.r_E, self.c_EB),
+        )
 
         r_B, r_E = self.integral(self.r_B, self.r_E, _t, self.Iext_B, self.Iext_E)
         self.r_B[:] = r_B
@@ -532,8 +559,6 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
     def run_simulation(self, mon_vars, pos_offset=0, progress_bar=True, dt=1., get_RT=False):
         pos_init = self.evidence_to_pos(self.x0, self.gamma_E)
         self.initialize_state(pos_init, pos_init + pos_offset)
-        dur1 = self.dur1
-        dur2 = self.dur2
         t_start = self.t_start
 
         runner = bp.DSRunner(
@@ -545,7 +570,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             progress_bar=progress_bar,
             dt=dt,
         )
-        runner.run(dur1 + dur2)
+        runner.run(self.dur)
         if get_RT:
             assert 'hit_boundary' in mon_vars, "hit_boundary must be in mon_vars when get_RT is True"
             RT = self.get_RT(t_start, runner.mon.hit_boundary)

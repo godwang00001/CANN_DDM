@@ -74,12 +74,16 @@ $$
 ### `J_EE`
 `make_edge_conn_mat()` in `rate_model_core/connectivity.py` still builds the edge recurrent matrix from a DoG kernel and rescales it to match the desired local drive around the edge center.
 
+The current runtime default now uses a reflected-boundary construction for the finite connectivity matrix rather than the older truncated one. Conceptually, missing kernel mass beyond the left/right boundary is folded back into the valid domain with an edge-inclusive mirror rule, so boundary rows no longer lose support simply because the domain is finite.
+
 The current implementation still contains fixed edge-kernel construction constants:
 
 - `EDGE_KERNEL_BASE_EXC_SIGMA = 1.0`
 - `EDGE_KERNEL_INHIBITION_WIDTH_RATIO = 1.2`
 
 These are implementation constants for constructing `J_EE`, not the public edge readout/profile parameter `gamma_E`.
+
+My current understanding is that this reflected-boundary builder is now the active no-hidden-state fix for the edge-drift problem. An earlier experimental direction added hidden edge guard units and full-domain state variables, but that mechanism has been removed in favor of the simpler reflected operator.
 
 ### `J_BB`
 `make_bump_conn_mat()` now takes explicit bump-kernel controls:
@@ -186,12 +190,13 @@ The current safe baseline for the coupling operators is:
 - `W_EB`: `simple`
 - `W_BE`: `simple`
 
-This baseline is the one currently trusted for Figure 2-style microdynamics work. The exploratory smooth kernel modes are available, but they are not yet the trusted default.
+For the edge recurrent operator, the active runtime baseline is now the reflected-boundary `J_EE` builder rather than the old truncated one.
 
 ## Current Open Questions
 The main code-level questions still open are:
 
 - whether the remaining legacy geometry compatibility path should now be removed
 - whether the smooth `W_EB` and `W_BE` options can be tuned into a stable and theory-faithful regime
-- whether the fixed `J_EE` kernel constants should stay as implementation constants or be promoted into explicit parameters
+- whether the fixed `J_EE` kernel constants and reflected-boundary rule should stay as implementation constants or be promoted into explicit parameters
+- how much cue-driven and manuscript-facing behavior changes under the reflected-boundary runtime default relative to the old truncated builder
 - how the code-level noise terms should ultimately map onto the manuscript-level stochastic formulation

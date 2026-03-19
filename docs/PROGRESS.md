@@ -132,3 +132,28 @@ This file records completed modeling, validation, and figure-generation work.
 ### Checkpoint
 - The codebase now has a cleaner package layout centered on `rate_model_core/`.
 - Both cross-population coupling paths are now expressed as explicit kernels, with a stable trusted baseline still available for Figure 2 work.
+
+## 2026-03-18
+
+### Completed
+- Investigated the no-input edge-drift problem with explicit residual-field diagnostics instead of only trajectory inspection.
+- Added `scripts/compare_edge_builder_drift.py` to compare edge-operator variants through Goldstone-mode residuals, static readout bias, and zero-input drift.
+- Tested structural no-hidden-state fixes for the edge recurrent operator and found that a reflected-boundary DoG construction removes most of the drift without introducing hidden guard-state variables.
+- Removed the temporary `edge_guard_frac` / hidden-full-edge implementation after confirming the reflected-boundary operator was the cleaner fix.
+- Promoted the reflected-boundary `J_EE` construction to the runtime default in `rate_model_core/connectivity.py`.
+- Saved the reflected-vs-truncated comparison figure to `figures/figure2/edge_operator_goldstone_projection_reflect.png`.
+
+### Validation
+- `python -m py_compile CANN_DDM_model_rate_based.py rate_model_core/config.py rate_model_core/connectivity.py scripts/compare_edge_builder_drift.py scripts/run_rate_model_geometry_regression.py` passed after the reflected-boundary runtime update.
+- `conda run -n cann_ddm_v2 python scripts/run_rate_model_geometry_regression.py` still passed after making reflected boundaries the runtime default.
+- On the zero-input edge-drift diagnostic at `dur=120`, the reflected boundary operator strongly outperformed the old truncated one:
+  - truncated `normalized`: `max_abs_goldstone_projection ≈ 9.29e-3`, `mean_abs_goldstone_projection ≈ 3.64e-3`, `theta_E_max_shift ≈ 0.1833`
+  - reflected `normalized_reflect`: `max_abs_goldstone_projection ≈ 8.08e-7`, `mean_abs_goldstone_projection ≈ 2.32e-7`, `theta_E_max_shift ≈ 0.00156`
+
+### Known Issues
+- The reflected-boundary runtime builder materially changes cue-driven trajectories relative to the old truncated builder, so figure-level outputs that depend on `J_EE` should be revalidated rather than assumed unchanged.
+- The runtime smoke/geometry checks remain structural guardrails; they do not by themselves prove full theory-faithful behavior of the new edge operator across all parameter regimes.
+
+### Checkpoint
+- The active runtime edge builder now uses reflected boundaries instead of truncation.
+- The repo no longer contains the experimental hidden-edge `edge_guard_frac` mechanism.

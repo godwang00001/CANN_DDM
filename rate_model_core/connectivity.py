@@ -1,5 +1,6 @@
 import brainpy as bp
 import brainpy.math as bm
+import numpy as np
 
 from rate_model_core.math import edge_states, sigmoid
 
@@ -29,28 +30,50 @@ def Gaussian_kernel(num, sigma_E, offset=0):
     return 1 / (bm.sqrt(2 * bm.pi) * sigma_E) * bm.exp(-0.5 * ((theta - offset) / sigma_E) ** 2)
 
 
-def make_conn_mat_from_kernel(num, kernel, normed=False):
+def _reflect_indices(indices, num):
+    indices = np.asarray(indices, dtype=int).copy()
+    if num <= 1:
+        return np.zeros_like(indices)
+    while True:
+        below = indices < 0
+        above = indices >= num
+        if not (np.any(below) or np.any(above)):
+            break
+        indices[below] = -indices[below] - 1
+        indices[above] = 2 * num - 1 - indices[above]
+    return indices
+
+
+def make_conn_mat_from_kernel(num, kernel, normed=False, boundary_mode='truncate'):
     """
     Build an interaction matrix from a 1D kernel sampled on the neuron grid.
     """
     Nk = len(kernel)
     assert Nk % 2 == 1, "Kernel length must be odd."
     assert Nk <= num, "Kernel length must be less than or equal to N."
+    if boundary_mode not in ('truncate', 'reflect'):
+        raise ValueError("boundary_mode must be one of: truncate, reflect")
 
     m = (Nk - 1) // 2
-    i = bm.arange(num).reshape(num, 1)
-    j = bm.arange(num).reshape(1, num)
-    diff = j - i
-    indices = diff + m
-    valid = (indices >= 0) & (indices < Nk)
+    conn = np.zeros((num, num), dtype=float)
+    rows = np.arange(num, dtype=int)
+    offsets = np.arange(-m, m + 1, dtype=int)
+    kernel_np = np.asarray(kernel, dtype=float)
 
-    conn = bm.zeros((num, num))
-    conn[valid] = kernel[indices[valid]]
+    for offset, weight in zip(offsets, kernel_np):
+        cols = rows + offset
+        if boundary_mode == 'truncate':
+            valid = (cols >= 0) & (cols < num)
+            conn[rows[valid], cols[valid]] = weight
+        else:
+            cols = _reflect_indices(cols, num)
+            conn[rows, cols] += weight
+
     if normed:
         row_sums = conn.sum(axis=1, keepdims=True)
         row_sums[row_sums == 0] = 1
         conn = conn / row_sums
-    return conn
+    return bm.asarray(conn)
 
 
 def make_bump_conn_mat(
@@ -221,6 +244,8 @@ def make_edge_conn_mat(
     geometry,
     edge_type='tanh',
     offset=0,
+    alpha=1.0,
+    kernel_clamp_frac=None,
 ):
     """
     Build the edge-population connectivity matrix.
@@ -229,8 +254,10 @@ def make_edge_conn_mat(
     `EDGE_KERNEL_BASE_EXC_SIGMA` and `EDGE_KERNEL_INHIBITION_WIDTH_RATIO`.
     These set the numerical kernel shape used to construct `J_EE`; they are
     not the same as the model's public edge-profile/readout parameter `gamma`.
+    Any automatic search over `offset` is handled by the caller; this function
+    remains a pure builder for a single explicit `offset` value.
     """
-    clamp_frac = geometry.clamp_frac
+    clamp_frac = geometry.clamp_frac if kernel_clamp_frac is None else float(kernel_clamp_frac)
     center_idx = num // 2
 
     gamma_effective = 4 * gamma / bm.exp(1) if edge_type == 'tanh' else gamma
@@ -245,7 +272,7 @@ def make_edge_conn_mat(
             EDGE_KERNEL_INHIBITION_WIDTH_RATIO,
             offset=local_offset,
         )
-        return make_conn_mat_from_kernel(num, kernel, normed=True)
+        return make_conn_mat_from_kernel(num, kernel, normed=True, boundary_mode='reflect')
 
     def _match_linear_drive(J_EE_local):
         theta = bm.linspace(geometry.theta_min, geometry.theta_max, num)

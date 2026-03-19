@@ -63,8 +63,7 @@ def build_smoke_test_params() -> dict:
         "noise_scale": 0.1,
         "dt_DDM": 1.0,
         "x0": 0.5,
-        "dur1": 100,
-        "dur2": 1000,
+        "dur": 1100,
         "seed": 4,
     }
     return {
