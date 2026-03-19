@@ -23,7 +23,9 @@ def pos_to_idx(pos, geometry):
 def pos_to_evidence(pos, boundary, theta_max, s):
     pos = bm.asarray(pos)
     theta_min = -theta_max
-    interior = boundary * bm.exp(s * (pos - theta_max))
+    interval = theta_max - theta_min
+    normalization = 1.0 - bm.exp(-s * interval)
+    interior = boundary * (1.0 - bm.exp(-s * (pos - theta_min))) / normalization
     return bm.where(
         pos <= theta_min,
         0.0,
@@ -34,8 +36,10 @@ def pos_to_evidence(pos, boundary, theta_max, s):
 def evidence_to_pos(evidence, boundary, theta_max, s):
     evidence = bm.asarray(evidence)
     theta_min = -theta_max
-    clipped = bm.clip(evidence, 1e-12, boundary)
-    interior = theta_max + bm.log(clipped / boundary) / s
+    interval = theta_max - theta_min
+    normalization = 1.0 - bm.exp(-s * interval)
+    clipped = bm.clip(evidence, 0.0, boundary)
+    interior = theta_min - bm.log(1.0 - (clipped / boundary) * normalization) / s
     return bm.where(
         evidence <= 0,
         theta_min,

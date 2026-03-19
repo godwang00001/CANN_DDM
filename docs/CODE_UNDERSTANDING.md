@@ -162,6 +162,21 @@ Pure geometry and utility helpers now live in `rate_model_core/utils.py`:
 
 So the main model file is now more focused on state initialization, coupling, and runtime dynamics.
 
+The current implementation readout map is now a finite-interval normalized exponential map over the coding window. In other words, the helper pair
+
+- `pos_to_evidence()`
+- `evidence_to_pos()`
+
+is no longer the old unnormalized `x \propto e^{\gamma \theta}` convention. It now explicitly maps the coding-window endpoints onto the evidence-domain endpoints:
+
+$$
+x(\theta_{\min}) = 0,
+\qquad
+x(\theta_{\max}) = \text{boundary}.
+$$
+
+My current understanding is that this is an implementation correction for bounded finite simulations, not a statement that the live code now exactly matches the manuscript's analytic $x \leftrightarrow \theta$ convention.
+
 ## Decision Inputs And Simulation
 `decision_space_params` still controls:
 
@@ -169,12 +184,25 @@ So the main model file is now more focused on state initialization, coupling, an
 - reference drift-diffusion trajectory
 - DDM-style cue-generation noise
 
+The active decision-duration parameter is now a single
+
+- `dur`
+
+rather than the older split `dur1` / `dur2` convention. As the current code stands, only the total duration mattered, so the separate variables have been removed from the active config path.
+
 Important current implementation fact:
 
 - `cue_R_all` and `cue_L_all` drive the neural simulation
 - `x_traj` is still only a reference trajectory
 - the neural circuit is not directly forced to follow `x_traj`
 - `run_simulation()` now initializes the bump and edge states directly at `theta^* = evidence_to_pos(x0, gamma_E)` and no longer uses external initialization inputs `I1` / `I2`
+
+## Default Parameter Baseline
+The repository now has a shared tested default-parameter helper:
+
+- `rate_model_core.default_params.build_stable_default_params()`
+
+My current understanding is that this should be treated as the canonical stable baseline unless an experiment notebook or script applies explicit local overrides. The supplement notebooks for `c_{BE}` analysis now derive their baseline config from this helper rather than duplicating the full parameter block inline.
 
 ## Regression Guardrails
 The current structure-preserving guardrails are:
@@ -199,4 +227,5 @@ The main code-level questions still open are:
 - whether the smooth `W_EB` and `W_BE` options can be tuned into a stable and theory-faithful regime
 - whether the fixed `J_EE` kernel constants and reflected-boundary rule should stay as implementation constants or be promoted into explicit parameters
 - how much cue-driven and manuscript-facing behavior changes under the reflected-boundary runtime default relative to the old truncated builder
+- how the normalized finite-interval implementation map should ultimately be reconciled with the manuscript's analytic $x(\theta)$ convention
 - how the code-level noise terms should ultimately map onto the manuscript-level stochastic formulation
