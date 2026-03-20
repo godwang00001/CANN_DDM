@@ -40,12 +40,13 @@ def build_stable_default_params() -> dict[str, Any]:
         "sigma_B": 0.2,
     }
     decision_space_params = {
+        "decision_mode": "continuous",
         "t_start": 10,
         "boundary": 1.0,
         "drift_rate": 1.0,
         "noise_scale": 0.1,
         "dt_DDM": 1.0,
-        "x0": 0.1,
+        "x0": 0.5,
         "dur": 1000,
         "seed": 4,
     }

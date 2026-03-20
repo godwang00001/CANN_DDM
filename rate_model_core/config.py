@@ -42,6 +42,7 @@ class BumpPopConfig:
 
 @dataclass(frozen=True)
 class DecisionSpaceConfig:
+    decision_mode: str = "continuous"
     t_start: int = 200
     dur: int = 1100
     boundary: float = 1
@@ -119,6 +120,7 @@ def parse_bump_config(bump_params):
 
 def parse_decision_space_config(decision_space_params):
     return DecisionSpaceConfig(
+        decision_mode=decision_space_params.get('decision_mode', DecisionSpaceConfig.decision_mode),
         t_start=decision_space_params.get('t_start', DecisionSpaceConfig.t_start),
         dur=decision_space_params.get('dur', DecisionSpaceConfig.dur),
         boundary=decision_space_params.get('boundary', DecisionSpaceConfig.boundary),

@@ -43,6 +43,7 @@ def build_legacy_params() -> dict:
         "noise_scale_bump": 0.0,
     }
     decision_space_params = {
+        "decision_mode": "discrete",
         "t_start": 200,
         "boundary": 1,
         "drift_rate": 1,

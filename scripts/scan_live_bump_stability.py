@@ -85,14 +85,14 @@ def build_params(
             "kernel_normed": kernel_normed,
         },
         "decision_space_params": {
+            "decision_mode": "discrete",
             "t_start": 200,
             "boundary": 1,
             "drift_rate": 1,
             "noise_scale": 0.1,
             "dt_DDM": 1.0,
             "x0": 0.5,
-            "dur1": 100,
-            "dur2": 1000,
+            "dur": 1100,
             "seed": 4,
         },
         "geometry": {

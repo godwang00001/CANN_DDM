@@ -124,8 +124,13 @@ which builds a short-range antisymmetric kernel with vanishing discrete zeroth m
 `I_BE` is also now defined as an explicit kernel operator:
 
 $$
-I_{BE} = c_{BE}\left(\text{cue}_R\, W_{BE} r_B - \text{cue}_L\, W_{BE} r_B\right)
+I_{BE} = c_{BE}(\theta_E)\, v_{\text{drive}}(t)\, (W_{BE} r_B)
 $$
+
+with the current runtime convention:
+
+- in `decision_mode='discrete'`, `v_drive = cue_R - cue_L`
+- in `decision_mode='continuous'`, `v_drive = v_drift + v_noise`
 
 The active baseline is:
 
@@ -139,6 +144,12 @@ There is also an exploratory smooth option:
 - `be_kernel_mode='smooth_symmetric'`
 
 which builds a short-range symmetric Gaussian kernel.
+
+On top of the old analytic `c_BE_params` modes, the model now also supports a calibration-backed runtime mode:
+
+- `c_BE_params['mode'] = 'target_diffusion'`
+
+This mode depends on a numerical calibration of the current parameter configuration and then constructs a geometry-corrected `c_BE(\theta)` profile for the continuous DDM input path.
 
 ## Canonical Profile Helpers
 Canonical population profiles now live in `rate_model_core/math.py`:
@@ -178,11 +189,12 @@ $$
 My current understanding is that this is an implementation correction for bounded finite simulations, not a statement that the live code now exactly matches the manuscript's analytic $x \leftrightarrow \theta$ convention.
 
 ## Decision Inputs And Simulation
-`decision_space_params` still controls:
+`decision_space_params` now controls:
 
-- cue timing
+- `decision_mode` (`continuous` or `discrete`)
+- cue timing / total duration
 - reference drift-diffusion trajectory
-- DDM-style cue-generation noise
+- continuous DDM drift and diffusion parameters
 
 The active decision-duration parameter is now a single
 
@@ -192,10 +204,20 @@ rather than the older split `dur1` / `dur2` convention. As the current code stan
 
 Important current implementation fact:
 
-- `cue_R_all` and `cue_L_all` drive the neural simulation
 - `x_traj` is still only a reference trajectory
 - the neural circuit is not directly forced to follow `x_traj`
 - `run_simulation()` now initializes the bump and edge states directly at `theta^* = evidence_to_pos(x0, gamma_E)` and no longer uses external initialization inputs `I1` / `I2`
+- in `decision_mode='continuous'`, the model builds `v_drift_all`, `v_noise_all`, and `v_drive_all`
+- in `decision_mode='discrete'`, the model still uses `cue_R_all` and `cue_L_all`
+
+The current time-step split is:
+
+- `decision_space_params['dt_DDM']`: decision/noise update interval used to generate `dW` and the reference DDM path
+- `run_simulation(dt=...)`: neural simulation / monitor sampling interval
+
+These two time scales are independent in the current implementation. In particular, the Brownian supplement notebook now uses separate notebook variables for them (`DT_DDM` and `DT_MODEL`) to avoid shape mismatches when the DDM update interval is coarser than the neural simulation step.
+
+For the shared stable default baseline, `x0` is now set to `0.5`, so the model starts from the interior of the coding range unless a notebook or script overrides it.
 
 ## Default Parameter Baseline
 The repository now has a shared tested default-parameter helper:
@@ -203,6 +225,36 @@ The repository now has a shared tested default-parameter helper:
 - `rate_model_core.default_params.build_stable_default_params()`
 
 My current understanding is that this should be treated as the canonical stable baseline unless an experiment notebook or script applies explicit local overrides. The supplement notebooks for `c_{BE}` analysis now derive their baseline config from this helper rather than duplicating the full parameter block inline.
+
+## `target_diffusion` Calibration Path
+The current code now has a model-integrated path for constructing a position-dependent `c_{BE}(\theta)` for the continuous DDM input:
+
+- helper: `rate_model_core.calibration.calibrate_target_diffusion_profile()`
+- model method: `prepare_target_diffusion_mode()`
+
+The intended flow is:
+
+1. set `c_BE_params['mode'] = 'target_diffusion'`
+2. optionally provide calibration overrides such as `theta_margin` or `c_be_sweep`
+3. call `prepare_target_diffusion_mode()` explicitly
+4. run the simulation in `decision_mode='continuous'`
+
+The helper calibrates a local gain `\kappa` from a constant-`c_{BE}` sweep, constructs the geometry-corrected `c_{BE}(\theta)` profile, and checks whether the implied effective coupling remains inside the numerically trusted regime.
+
+Important implementation detail:
+
+- if the first sweep is too small to cover the implied effective coupling range, the helper automatically expands the sweep, refits `\kappa`, and checks that the relative change in `\kappa` remains below tolerance
+
+The returned calibration result is intentionally minimal:
+
+- `kappa`
+- `c_be_theta_max`
+- `effective_c_be_max`
+- `valid_c_be_max`
+- `kappa_rel_error`
+- `certificate_passed`
+
+My current understanding is that this is an implementation-level certification of the `target_diffusion` construction, not a proof that the full nonlinear task dynamics are always safe.
 
 ## Regression Guardrails
 The current structure-preserving guardrails are:
@@ -228,4 +280,5 @@ The main code-level questions still open are:
 - whether the fixed `J_EE` kernel constants and reflected-boundary rule should stay as implementation constants or be promoted into explicit parameters
 - how much cue-driven and manuscript-facing behavior changes under the reflected-boundary runtime default relative to the old truncated builder
 - how the normalized finite-interval implementation map should ultimately be reconciled with the manuscript's analytic $x(\theta)$ convention
+- how robust the calibrated `target_diffusion` / `c_{BE}(\theta)` construction remains once the task leaves the weak-input aligned regime
 - how the code-level noise terms should ultimately map onto the manuscript-level stochastic formulation

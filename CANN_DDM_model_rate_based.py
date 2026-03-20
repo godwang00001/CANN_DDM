@@ -2,6 +2,7 @@ import numpy as np
 import brainpy as bp
 import brainpy.math as bm
 import matplotlib.pyplot as plt
+import warnings
 from jax import lax
 from scipy.linalg import circulant
 import scipy
@@ -62,6 +63,7 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             self._init_edge_pop(edge_config)
             self._init_bump_pop(bump_config)
             self._init_decision_space(decision_space_config)
+            self.c_BE_func = self.c_BE_theta(self.c_BE_params)
         else:
             raise ValueError("CANN_params is required")
 
@@ -167,7 +169,6 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.rho_B = bm.pi / self.num_B
 
         # Static precomputations
-        self.c_BE_func = self.c_BE_theta(self.c_BE_params)
         self.J_BB = make_bump_conn_mat(
             self.num_B,
             self.sigma_B,
@@ -202,39 +203,98 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         Initialize decision-space parameters, cue streams, and reference trajectory.
         """
         # Raw parameters
+        self.decision_mode = config.decision_mode
         self.t_start = config.t_start  # unit: ms, time to start encoding the evidence since the simulation begin
         self.dur = config.dur  # unit: ms, total simulation duration
         self.boundary = config.boundary
         self.drift_rate = config.drift_rate
         self.noise_scale = config.noise_scale
         self.dt_DDM = config.dt_DDM
-        self.dx = self.noise_scale * np.sqrt(self.dt_DDM * 1e-3)
-        self.p = 0.5 * (1 + (self.drift_rate * np.sqrt(self.dt_DDM * 1e-3)) / self.noise_scale)
+        self.dt_DDM_ms = self._decision_step_ms(self.dt_DDM)
+        self.dt_DDM_s = self.dt_DDM * 1e-3
+        self.dx = self.noise_scale * np.sqrt(self.dt_DDM_s)
         self.x0 = config.x0 if config.x0 is not None else self.boundary / 2
         assert self.x0 >= 0 and self.x0 <= self.boundary, "x0 should be between 0 and boundary"
         self.seed = config.seed
 
         # Static precomputations
-        self.cue_L_all, self.cue_R_all = self.generate_cues_input(
-            self.dur,
-            self.dt_DDM,
-            self.p,
-            self.t_start,
-            seed=self.seed,
-        )
-        self.x_traj = self.get_x_traj(
-            self.t_start,
-            self.dx,
-            self.dt_DDM,
-            self.x0,
-            self.cue_R_all,
-            self.cue_L_all,
-            self.boundary,
-        )
+        if self.decision_mode == 'continuous':
+            self.p = None
+            self.dW_all = self.generate_continuous_noise_input(
+                self.dur,
+                self.dt_DDM,
+                self.t_start,
+                seed=self.seed,
+            )
+            step_starts = np.arange(0, int(self.dur), self.dt_DDM_ms, dtype=int)
+            dW_steps = np.asarray(self.dW_all[step_starts], dtype=float)
+            active_step_mask = step_starts >= int(self.t_start)
+            drive_x_speed_unit = float(self.c_BE_params.get('drive_x_speed_unit', 3.0e-4))
+            if drive_x_speed_unit <= 0:
+                raise ValueError("c_BE_params['drive_x_speed_unit'] must be positive")
+            v_drift_steps = np.zeros_like(dW_steps)
+            v_drift_steps[active_step_mask] = (
+                float(self.drift_rate) * float(self.dt_DDM_s) / (drive_x_speed_unit * float(self.dt_DDM_ms))
+            )
+            v_noise_steps = np.zeros_like(dW_steps)
+            v_noise_steps[active_step_mask] = (
+                float(self.noise_scale) * dW_steps[active_step_mask] / (drive_x_speed_unit * float(self.dt_DDM_ms))
+            )
+            self.v_drift_all = self.expand_decision_step_values(
+                self.dur,
+                self.dt_DDM,
+                v_drift_steps,
+            )
+            self.v_noise_all = self.expand_decision_step_values(
+                self.dur,
+                self.dt_DDM,
+                v_noise_steps,
+            )
+            self.v_drive_all = self.v_drift_all + self.v_noise_all
+            self.cue_R_all = np.zeros(self.dur, dtype=float)
+            self.cue_L_all = np.zeros(self.dur, dtype=float)
+            self.x_traj = self.get_x_traj_continuous(
+                self.t_start,
+                self.drift_rate,
+                self.noise_scale,
+                self.dt_DDM,
+                self.x0,
+                self.dW_all,
+                self.boundary,
+            )
+        elif self.decision_mode == 'discrete':
+            self.p = 0.5 * (1 + (self.drift_rate * np.sqrt(self.dt_DDM_s)) / self.noise_scale)
+            self.cue_L_all, self.cue_R_all = self.generate_cues_input(
+                self.dur,
+                self.dt_DDM,
+                self.p,
+                self.t_start,
+                seed=self.seed,
+            )
+            self.dW_all = np.zeros(self.dur, dtype=float)
+            self.v_drift_all = np.zeros(self.dur, dtype=float)
+            self.v_noise_all = np.zeros(self.dur, dtype=float)
+            self.v_drive_all = np.zeros(self.dur, dtype=float)
+            self.x_traj = self.get_x_traj(
+                self.t_start,
+                self.dx,
+                self.dt_DDM,
+                self.x0,
+                self.cue_R_all,
+                self.cue_L_all,
+                self.boundary,
+            )
+        else:
+            raise ValueError(
+                f"Unknown decision_mode '{self.decision_mode}'. Supported modes: continuous, discrete."
+            )
 
         # Dynamic state
         self.cue_R = bm.Variable(bm.zeros(1))
         self.cue_L = bm.Variable(bm.zeros(1))
+        self.v_drift = bm.Variable(bm.zeros(1))
+        self.v_noise = bm.Variable(bm.zeros(1))
+        self.v_drive = bm.Variable(bm.zeros(1))
         self.hit_boundary = bm.Variable(bm.zeros(1, dtype=bool))
 
     # ------------------------------------------------------------------
@@ -273,6 +333,9 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.c_EB_dym[:] = 0.
         self.cue_R[:] = 0.
         self.cue_L[:] = 0.
+        self.v_drift[:] = 0.
+        self.v_noise[:] = 0.
+        self.v_drive[:] = 0.
         self.hit_boundary[:] = False
 
     # ------------------------------------------------------------------
@@ -334,7 +397,6 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         - 'linear': returns theta_req(theta) / k_linear; parameter: `k_linear` (or `k`), default 1.
         """
         theta_req_func = self.theta_req()
-        # Extract mode from kwargs if provided, otherwise use the mode parameter
         mode = c_BE_params.get('mode', 'const')
         if mode == 'const':
             value = self.c_BE
@@ -351,8 +413,64 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
 
             delta = lambda theta: bm.sqrt(b ** 2 + 4 * a * theta_req_func(theta))
             return lambda theta: (-b + delta(theta)) / (2 * a)
+        elif mode == 'target_diffusion':
+            if 'kappa' not in c_BE_params:
+                def _unprepared_target_diffusion(theta):
+                    raise ValueError(
+                        "target_diffusion mode requires calibration. Call prepare_target_diffusion_mode() first."
+                    )
+                return _unprepared_target_diffusion
+            kappa = float(c_BE_params['kappa'])
+            if np.isclose(kappa, 0.0):
+                raise ValueError("kappa must be non-zero for target_diffusion mode")
+
+            theta_margin = float(c_BE_params.get('theta_margin', 0.02))
+            drive_x_speed_unit = float(c_BE_params.get('drive_x_speed_unit', 3.0e-4))
+            if drive_x_speed_unit <= 0:
+                raise ValueError("drive_x_speed_unit must be positive for target_diffusion mode")
+            theta_min = float(self.geometry.coding_theta_min)
+            theta_max = float(self.geometry.coding_theta_max)
+            interval = theta_max - theta_min
+            normalization = 1.0 - bm.exp(-self.gamma_E * interval)
+            eval_theta = lambda theta: bm.clip(theta, theta_min + theta_margin, theta_max - theta_margin)
+            dx_dtheta = lambda theta: (
+                self.boundary
+                * self.gamma_E
+                * bm.exp(-self.gamma_E * (eval_theta(theta) - theta_min))
+                / normalization
+            )
+            return lambda theta: drive_x_speed_unit / (kappa * dx_dtheta(theta))
         else:
-            raise ValueError(f"Unknown c_BE_mode '{mode}'. Supported modes: const, linear, quadratic.")
+            raise ValueError(f"Unknown c_BE_mode '{mode}'. Supported modes: const, linear, quadratic, target_diffusion.")
+
+    def prepare_target_diffusion_mode(self, **overrides):
+        params = dict(self.c_BE_params)
+        params.update(overrides)
+        if params.get('mode') != 'target_diffusion':
+            raise ValueError("prepare_target_diffusion_mode() requires c_BE_params['mode'] == 'target_diffusion'.")
+
+        from rate_model_core.calibration import calibrate_target_diffusion_profile
+
+        result = calibrate_target_diffusion_profile(
+            self,
+            calibration_x0=params.get('calibration_x0'),
+            c_be_sweep=params.get('c_be_sweep'),
+            min_accumulation_samples=int(params.get('min_accumulation_samples', 200)),
+            mean_abs_tol=params.get('mean_abs_tol'),
+            std_abs_tol=params.get('std_abs_tol'),
+            theta_margin=float(params.get('theta_margin', 0.02)),
+            sweep_expand_factor=float(params.get('sweep_expand_factor', 1.1)),
+            kappa_tol=float(params.get('kappa_tol', 0.1)),
+        )
+        self.c_BE_params.update(params)
+        self.c_BE_params['kappa'] = float(result['kappa'])
+        self.c_BE_func = self.c_BE_theta(self.c_BE_params)
+        if not result['certificate_passed']:
+            warnings.warn(
+                "target_diffusion calibration did not pass the alignment/kappa consistency certificate; continuing anyway.",
+                stacklevel=2,
+            )
+        return result
 
     # ------------------------------------------------------------------
     # State localization and readout helpers
@@ -413,8 +531,36 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
     # ------------------------------------------------------------------
     # Cue-generation and reference-trajectory utilities
     # ------------------------------------------------------------------
+    def _decision_step_ms(self, dt_DDM):
+        step_ms = int(round(float(dt_DDM)))
+        if step_ms <= 0 or not np.isclose(float(dt_DDM), float(step_ms)):
+            raise ValueError("dt_DDM must be a positive integer number of milliseconds")
+        return step_ms
+
     def generate_cues_input(self, dur, dt_DDM, p, t_start, seed=None):
         return util_generate_cues_input(dur, dt_DDM, p, t_start, seed=seed)
+
+    def generate_continuous_noise_input(self, dur, dt_DDM, t_start, seed=None):
+        step_ms = self._decision_step_ms(dt_DDM)
+        dt_s = float(dt_DDM) * 1e-3
+        dW_all = np.zeros(int(dur), dtype=float)
+        step_times = np.arange(0, int(dur), step_ms, dtype=int)
+        active_mask = step_times >= int(t_start)
+        if np.any(active_mask):
+            rng = np.random.default_rng(seed)
+            dW_all[step_times[active_mask]] = np.sqrt(dt_s) * rng.standard_normal(np.count_nonzero(active_mask))
+        return dW_all
+
+    def expand_decision_step_values(self, dur, dt_DDM, step_values):
+        step_ms = self._decision_step_ms(dt_DDM)
+        expanded = np.zeros(int(dur), dtype=float)
+        step_starts = np.arange(0, int(dur), step_ms, dtype=int)
+        if len(step_values) != len(step_starts):
+            raise ValueError("step_values must have the same length as the decision-step grid")
+        for start, value in zip(step_starts, np.asarray(step_values, dtype=float)):
+            stop = min(start + step_ms, int(dur))
+            expanded[start:stop] = value
+        return expanded
 
     def get_x_traj(self, t_start, dx, dt_DDM, x0,
                    cue_R_all, cue_L_all, boundary):
@@ -425,6 +571,31 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         No explicit for-loop is used.
         """
         return util_get_x_traj(t_start, dx, dt_DDM, x0, cue_R_all, cue_L_all, boundary)
+
+    def get_x_traj_continuous(self, t_start, drift_rate, noise_scale, dt_DDM, x0, dW_all, boundary):
+        T = len(dW_all)
+        x_traj = np.full(T, float(x0), dtype=float)
+        step_ms = self._decision_step_ms(dt_DDM)
+        dt_s = float(dt_DDM) * 1e-3
+        delta = noise_scale * np.asarray(dW_all, dtype=float)
+        step_times = np.arange(0, T, step_ms, dtype=int)
+        active_step_times = step_times[step_times >= int(t_start)]
+        delta[active_step_times] += drift_rate * dt_s
+
+        x_curr = float(x0)
+        absorbed = False
+        for t in range(T):
+            if t < int(t_start):
+                x_traj[t] = float(x0)
+                continue
+            if absorbed:
+                x_traj[t] = x_curr
+                continue
+            x_curr += float(delta[t])
+            x_traj[t] = x_curr
+            if x_curr >= boundary or x_curr <= 0.0:
+                absorbed = True
+        return x_traj
 
     def get_pos_offset(self, x0, gamma_E, tol=1e-4, max_iter=50, progress=False):
         """
@@ -494,6 +665,8 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         Build the bump-to-edge input for the current cue state.
         """
         filtered_r_B = self.W_BE @ r_B
+        if self.decision_mode == 'continuous':
+            return c_BE * self.v_drive * filtered_r_B
         I_BE = c_BE * (cue_R * filtered_r_B + cue_L * (-filtered_r_B))
         return I_BE
 
@@ -524,7 +697,11 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
 
         self.I_BB[:] = self.J_BB @ self.r_B
         self.I_EE[:] = self.J_EE @ self.r_E
-        self.c_BE_dyn[:] = 1 * self.c_BE
+        self.c_BE_dyn[:] = self.c_BE_func(self.theta_E)
+        if self.decision_mode == 'continuous':
+            self.v_drive[:] = self.v_drift + self.v_noise
+        else:
+            self.v_drive[:] = 0.0
         self.I_E_noise[:] = self.noise_scale_edge * bm.random.normal(0, 1, self.num_E)
         self.I_B_noise[:] = self.noise_scale_bump * bm.random.normal(0, 1, self.num_B)
         self.I_BE[:] = ~self.hit_boundary * bm.where(
@@ -564,7 +741,9 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         runner = bp.DSRunner(
             self,
             inputs=[('cue_R', self.cue_R_all, 'iter', '='),
-                    ('cue_L', self.cue_L_all, 'iter', '=')],
+                    ('cue_L', self.cue_L_all, 'iter', '='),
+                    ('v_drift', self.v_drift_all, 'iter', '='),
+                    ('v_noise', self.v_noise_all, 'iter', '=')],
             monitors=mon_vars,
             dyn_vars=self.vars(),
             progress_bar=progress_bar,
