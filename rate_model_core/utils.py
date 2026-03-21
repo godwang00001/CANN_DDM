@@ -83,5 +83,9 @@ def get_x_traj(t_start, dx, dt_DDM, x0, cue_R_all, cue_L_all, boundary):
     cross = above | below
     if np.any(cross):
         first_cross = np.argmax(cross)
+        if x_traj[first_cross] >= boundary:
+            x_traj[first_cross] = boundary
+        else:
+            x_traj[first_cross] = 0.0
         x_traj[first_cross + 1:] = x_traj[first_cross]
     return x_traj

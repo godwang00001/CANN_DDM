@@ -1,6 +1,45 @@
 """Core support modules for the CANN/DDM rate model."""
 
+from .accumulator_simulation import (
+    AccumulatorSimulationSweep,
+    AccumulatorSimulationResult,
+    BOUNDARY_DEFAULT,
+    C_BE_SWEEP_DEFAULT,
+    MIN_ACCUMULATION_SAMPLES_DEFAULT,
+    THETA_MARGIN_DEFAULT,
+    X0_DEFAULT,
+    decision_step_ms,
+    load_simulation_sweep_npz,
+    load_simulation_result_npz,
+    prepare_circuit_target_diffusion_calibration,
+    save_simulation_sweep_npz,
+    save_simulation_result_npz,
+    simulate_circuit_condition,
+    simulate_circuit_trials,
+    simulate_absorbed_ddm_trials,
+    simulate_ddm_trials,
+)
 from .calibration import calibrate_target_diffusion_profile
 from .default_params import build_stable_default_params
 
-__all__ = ["build_stable_default_params", "calibrate_target_diffusion_profile"]
+__all__ = [
+    "AccumulatorSimulationSweep",
+    "AccumulatorSimulationResult",
+    "BOUNDARY_DEFAULT",
+    "C_BE_SWEEP_DEFAULT",
+    "MIN_ACCUMULATION_SAMPLES_DEFAULT",
+    "THETA_MARGIN_DEFAULT",
+    "X0_DEFAULT",
+    "build_stable_default_params",
+    "calibrate_target_diffusion_profile",
+    "decision_step_ms",
+    "load_simulation_sweep_npz",
+    "load_simulation_result_npz",
+    "prepare_circuit_target_diffusion_calibration",
+    "save_simulation_sweep_npz",
+    "save_simulation_result_npz",
+    "simulate_circuit_condition",
+    "simulate_circuit_trials",
+    "simulate_absorbed_ddm_trials",
+    "simulate_ddm_trials",
+]

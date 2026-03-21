@@ -17,13 +17,40 @@ This file records validated long-term project state only.
   - `rate_model_core/math.py`
   - `rate_model_core/utils.py`
 - `CANN_DDM_model_rate_based.py` remains the main model/dynamics entrypoint used by the notebooks.
+- `CANN_DDM_model_rate_based.py` now exposes `build_runner()` so task-level code can reuse the same BrainPy runner for chunked circuit trials instead of always forcing a one-shot full-duration run.
 - The active runtime `J_EE` builder in `rate_model_core/connectivity.py` now uses reflected boundaries rather than truncation.
 - The trusted current coupling baseline uses explicit kernel operators with:
   - `W_EB`: `eb_kernel_mode='simple'`
   - `W_BE`: `be_kernel_mode='simple'`
+- An opt-in robust edge-to-bump operator is also available:
+  - `W_EB`: `eb_kernel_mode='smoothed_derivative'`
+  - derivative-of-Gaussian style kernel
+  - reflected-boundary construction
+  - intended to suppress edge-profile jitter before it reaches the bump population
+- An opt-in severe-instability fallback is also available:
+  - `W_EB`: `eb_kernel_mode='edge_readout_bump'`
+  - read out `theta_E` from the live edge state
+  - reconstruct a canonical bump centered at `theta_E`
+  - scale that bump to the clean-edge `simple`-operator peak
 - `scripts/run_rate_model_smoke.py` is the current deterministic no-cue regression guard for structure-preserving refactors.
 - `scripts/run_rate_model_geometry_regression.py` is the current fixed-seed cue-driven regression guard for checking that the new shared-geometry path reproduces the legacy configuration behavior.
+- `rate_model_core/accumulator_simulation.py` is the current shared task-level accumulator helper for both pure DDM outputs and decoded circuit outputs, including the reusable `simulate_ddm_trials()` and `simulate_circuit_trials()` APIs.
+- `rate_model_core/accumulator_simulation.py` now also exposes the sweep-level `AccumulatorSimulationSweep` save/load helpers used by the psychometric workflow.
+- `rate_model_core/ddm.py` remains as a compatibility wrapper around the shared accumulator module.
+- `figures_code/supp/ddm_psychometric_curve.ipynb` is the current pure-DDM psychometric notebook for coherence-to-drift sweeps, sigmoid fitting, and figure generation.
+- `figures_code/supp/ddm_circuit_psychometric_curve.ipynb` is the current DDM-vs-circuit psychometric comparison notebook, and it now loads one combined DDM+circuit dataset bundle rather than two separate run folders.
+- `scripts/simulate_psychometric_data.py` is the current sweep-level data generator for notebook-driven psychometric figures; it saves one NPZ per coherence condition plus a shared `summary.csv` and `config.json`, reuses one circuit calibration across a sweep, and supports `--resume`.
+- `scripts/submit_circuit_psychometric_scc.sh` is now the active public psychometric-run entrypoint:
+  - generates the DDM sweep locally
+  - submits the circuit sweep to SCC
+  - submits a dependent finalizer job
+  - leaves one top-level `dataset.npz`, `summary.csv`, and `config.json`
+- `scripts/generate_ddm_psychometric_dataset.py` is the current local DDM sweep generator used by the unified psychometric workflow.
+- `scripts/combine_psychometric_model_datasets.py` is the current final bundler that combines the completed DDM and circuit sweep outputs into one shared top-level dataset.
+- `rate_model_core/accumulator_simulation.py` still exposes a compatibility alias `simulate_circuit_condition()`, but the active circuit data-generation entrypoint is the sweep script rather than a separate one-condition CLI.
 - `scripts/compare_edge_builder_drift.py` is the current operator-level diagnostic for edge drift, Goldstone-mode residuals, and static readout bias.
+- `scripts/check_eb_kernel_robustness.py` is the current operator-level diagnostic for clean-edge fidelity and high-frequency jitter rejection in `W_EB`.
+- `scripts/check_eb_instability_sample.py` is the current direct diagnostic for `W_EB` behavior on the saved unstable edge sample `figures_code/supp/r_E_instability.npy`.
 - `scripts/study_I_BE_live_bump.py` and `scripts/scan_live_bump_stability.py` are the current exploratory study scripts for coupling-mechanism and stability work.
 - `figures_code/fig2_micro_dyn_scheme.ipynb` has been migrated to the shared `geometry` / `num_units` setup.
 - `figures/figure2/edge_operator_goldstone_projection_reflect.png` records the reflected-vs-truncated edge-operator comparison that motivated the current `J_EE` default.

@@ -120,14 +120,25 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             offset=self.offset,
             alpha=self.alpha_E,
         )
-        self.W_EB = make_edge_to_bump_conn_mat(
-            self.num_E,
-            kernel_mode=self.eb_kernel_mode,
-            kernel_sigma=self.eb_kernel_sigma,
-            kernel_shift=self.eb_kernel_shift,
-            kernel_gain=self.eb_kernel_gain,
-        )
         self.r_E0 = self.edge_states(self.num_E, self.gamma_E, self.edge_geometry, self.edge_type)
+        if self.eb_kernel_mode == 'edge_readout_bump':
+            self.W_EB = None
+            reference_w_eb = make_edge_to_bump_conn_mat(
+                self.num_E,
+                kernel_mode='simple',
+                kernel_gain=self.eb_kernel_gain,
+            )
+            reference_i_eb = reference_w_eb @ self.r_E0
+            self.eb_readout_bump_peak = float(bm.max(bm.abs(reference_i_eb)))
+        else:
+            self.W_EB = make_edge_to_bump_conn_mat(
+                self.num_E,
+                kernel_mode=self.eb_kernel_mode,
+                kernel_sigma=self.eb_kernel_sigma,
+                kernel_shift=self.eb_kernel_shift,
+                kernel_gain=self.eb_kernel_gain,
+            )
+            self.eb_readout_bump_peak = 0.0
 
         # Dynamic state
         self.c_EB_dym = bm.Variable(bm.zeros(1))
@@ -592,9 +603,13 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
                 x_traj[t] = x_curr
                 continue
             x_curr += float(delta[t])
-            x_traj[t] = x_curr
-            if x_curr >= boundary or x_curr <= 0.0:
+            if x_curr >= boundary:
+                x_curr = float(boundary)
                 absorbed = True
+            elif x_curr <= 0.0:
+                x_curr = 0.0
+                absorbed = True
+            x_traj[t] = x_curr
         return x_traj
 
     def get_pos_offset(self, x0, gamma_E, tol=1e-4, max_iter=50, progress=False):
@@ -675,7 +690,15 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         Build the edge-to-bump input from the current edge profile.
         """
         pos = self.find_current_edge_location(r_E)
-        stimulus = (self.W_EB @ r_E)
+        if self.eb_kernel_mode == 'edge_readout_bump':
+            stimulus = self.eb_readout_bump_peak * self.bump_states(
+                self.num_B,
+                self.sigma_B,
+                self.bump_geometry,
+                center_pos=pos,
+            )
+        else:
+            stimulus = (self.W_EB @ r_E)
         zeros = bm.zeros_like(stimulus)
         return bm.where(
             (pos >= self.geometry.coding_theta_min) & (pos <= self.geometry.coding_theta_max),
@@ -733,12 +756,11 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
         self.Iext_B[:] = 0.
         self.Iext_E[:] = 0.
 
-    def run_simulation(self, mon_vars, pos_offset=0, progress_bar=True, dt=1., get_RT=False):
+    def build_runner(self, mon_vars, pos_offset=0, progress_bar=True, dt=1.):
         pos_init = self.evidence_to_pos(self.x0, self.gamma_E)
         self.initialize_state(pos_init, pos_init + pos_offset)
-        t_start = self.t_start
 
-        runner = bp.DSRunner(
+        return bp.DSRunner(
             self,
             inputs=[('cue_R', self.cue_R_all, 'iter', '='),
                     ('cue_L', self.cue_L_all, 'iter', '='),
@@ -749,6 +771,10 @@ class CANN_DDM_model(bp.dyn.NeuDyn):
             progress_bar=progress_bar,
             dt=dt,
         )
+
+    def run_simulation(self, mon_vars, pos_offset=0, progress_bar=True, dt=1., get_RT=False):
+        t_start = self.t_start
+        runner = self.build_runner(mon_vars, pos_offset=pos_offset, progress_bar=progress_bar, dt=dt)
         runner.run(self.dur)
         if get_RT:
             assert 'hit_boundary' in mon_vars, "hit_boundary must be in mon_vars when get_RT is True"

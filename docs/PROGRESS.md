@@ -2,6 +2,120 @@
 
 This file records completed modeling, validation, and figure-generation work.
 
+## 2026-03-21
+
+### Completed
+- Unified the psychometric sweep workflow around one public SCC entrypoint, `scripts/submit_circuit_psychometric_scc.sh`.
+- Updated that entrypoint so it now:
+  - generates the DDM sweep locally with the same task parameters
+  - submits one SCC worker job per circuit coherence
+  - submits one dependent finalizer job
+  - leaves one top-level `dataset.npz`, `summary.csv`, and `config.json`
+- Added `scripts/generate_ddm_psychometric_dataset.py` as the local sweep generator for the pure DDM path.
+- Added `scripts/combine_psychometric_model_datasets.py` so the finalizer can merge the completed DDM and circuit sweep outputs into one shared dataset bundle.
+- Updated `scripts/finalize_psychometric_run.sh` so it now merges the circuit sweep first, then combines DDM and circuit outputs into the final top-level bundle.
+- Fixed the SCC worker-launch path so the per-coherence circuit jobs no longer depend on the SGE spool copy for resolving repository paths.
+- Forced the SCC circuit jobs onto CPU with `JAX_PLATFORMS=cpu`, avoiding the earlier node-dependent CUDA backend failures.
+- Updated `figures_code/supp/ddm_circuit_psychometric_curve.ipynb` so it now loads one combined DDM+circuit dataset rather than two separate run folders.
+- Fixed the notebook root-path logic so it searches upward for the real repo root instead of assuming `Path.cwd()` already points at it.
+
+### Validation
+- `bash -n scripts/submit_circuit_psychometric_scc.sh scripts/finalize_psychometric_run.sh scripts/run_circuit_psychometric_one_coherence.sh` passed after the unified workflow changes.
+- `python -m py_compile scripts/generate_ddm_psychometric_dataset.py scripts/combine_psychometric_model_datasets.py scripts/merge_circuit_psychometric_outputs.py rate_model_core/accumulator_simulation.py rate_model_core/__init__.py` passed after the new helpers were added.
+- `python scripts/generate_ddm_psychometric_dataset.py --run-name ddm_psychometric_n200` completed locally and produced a valid 9-condition, 200-trial DDM sweep bundle.
+- A local smoke merge with `scripts/combine_psychometric_model_datasets.py` successfully combined the existing DDM and circuit sweep bundles into one dataset with:
+  - `model_names = ['ddm', 'circuit']`
+  - `choice.shape = (2, 9, 200)`
+  - `rt_ms.shape = (2, 9, 200)`
+- The live combined SCC run `results/psychometric/9_coh_200_trials_each/` completed and produced:
+  - one `dataset.npz`
+  - one `summary.csv`
+  - one `config.json`
+- Executed the code cells from `figures_code/supp/ddm_circuit_psychometric_curve.ipynb` through a local JSON-driven validation pass after the combined-dataset refactor; the notebook completed successfully and saved `figures/supp/ddm_circuit_psychometric_curve.png`.
+
+### Known Issues
+- The Codex nested-shell environment still cannot reliably invoke `qsub` through a child shell even though direct top-level `qsub` works; the unified submit script is intended to be launched from a normal SCC login shell.
+- The current combined dataset format is notebook-facing and ad hoc; it is not yet exposed through a shared load helper in `rate_model_core/`.
+
+### Checkpoint
+- The active psychometric workflow now produces one combined DDM+circuit dataset bundle per run instead of separate top-level DDM and circuit result folders.
+- The DDM-vs-circuit psychometric notebook now expects one combined run folder as its source of truth.
+
+## 2026-03-20
+
+### Completed
+- Added `rate_model_core/accumulator_simulation.py` as the shared task-level accumulator helper for both pure DDM outputs and decoded circuit outputs.
+- Kept `rate_model_core/ddm.py` as a compatibility wrapper so older imports still resolve.
+- Implemented vectorized absorbed multi-trial simulation with:
+  - shared scalar `drift_rate`
+  - fixed `noise_scale`
+  - integer-millisecond `dt_DDM`
+  - optional dense trajectory return
+  - RT measured relative to `t_start` in milliseconds
+- Added NPZ save/load helpers for the shared accumulator result format.
+- Added `scripts/simulate_circuit_condition.py` to simulate one calibrated circuit-model coherence condition and save a DDM-compatible core result archive.
+- Folded the reusable circuit-condition simulation logic into `rate_model_core/accumulator_simulation.py` so both abstract DDM and decoded circuit simulations share one task-level API; kept `scripts/simulate_circuit_condition.py` as a thin CLI wrapper.
+- Tightened the shared public API names to `simulate_ddm_trials()` and `simulate_circuit_trials()`, with both returning only `AccumulatorSimulationResult`; circuit calibration fields now live in result metadata.
+- Added `scripts/simulate_psychometric_data.py` as the sweep-level data generator for psychometric figures; it saves one result archive per coherence condition plus a sweep summary/config for notebook import.
+- Added a reusable `build_runner()` entrypoint in `CANN_DDM_model_rate_based.py` so circuit trials can be advanced in chunks without forcing one-shot full-duration runs.
+- Updated the shared circuit simulator to reuse a provided calibration, stop trials early after the first boundary hit, and store absorbing post-hit task-level trajectories when trajectory saving is enabled.
+- Updated the sweep script to reuse one circuit calibration across a sweep, add `--resume`, and avoid recalibration when only existing condition archives are being reused.
+- Exposed the shared accumulator helpers through `rate_model_core/__init__.py`.
+- Added `figures_code/supp/ddm_psychometric_curve.ipynb` to generate a pure-DDM psychometric curve from a coherence-to-drift sweep, fit a sigmoid, and save the resulting figure.
+- Updated `docs/CODE_UNDERSTANDING.md` and `docs/STATES.md` to record the new pure-DDM entrypoints.
+
+### Validation
+- `python -m py_compile rate_model_core/accumulator_simulation.py rate_model_core/ddm.py rate_model_core/__init__.py scripts/simulate_circuit_condition.py` passed after the shared accumulator refactor and circuit script were added.
+- Executed the code cells from `figures_code/supp/ddm_psychometric_curve.ipynb` in order through a local JSON-driven validation pass; the notebook completed successfully, fit the psychometric sigmoid, and saved `figures/supp/ddm_psychometric_curve.png`.
+- Under the current notebook defaults (`noise_scale=0.3`, `drift_gain=1.5`, `dur=10000`, `num_trials=100`), the worst miss fraction across the coherence sweep stayed low (`≈ 0.0300`), and the fitted midpoint stayed near zero (`bias ≈ -0.00437`).
+- Verified DDM NPZ save/load round-trip through the shared accumulator format: choices, hit flags, RTs, trajectories, and metadata all survived reload without shape or value drift.
+- Ran a one-trial circuit smoke test through `scripts/simulate_circuit_condition.py` using the notebook-style task semantics (`coherence=0`, `drift_gain=1.5`, `noise_scale=0.3`, `dt_ddm=1 ms`, `dt_model=1 ms`, `t_start=10 ms`, `dur=10000 ms`, `seed=7`); the script completed, calibrated `kappa ≈ 0.0150`, saved an NPZ archive, and the saved result reloaded cleanly with `model_type='circuit'`.
+- `python -m py_compile scripts/simulate_psychometric_data.py` passed after adding the sweep-level data generator.
+- `python scripts/simulate_psychometric_data.py --model ddm ...` completed under the current notebook-style DDM defaults and wrote a nine-condition sweep with `max_miss_fraction = 0.03`.
+- `conda run -n cann_ddm_v2 python -c "import runpy, sys; ... runpy.run_path('scripts/simulate_psychometric_data.py', run_name='__main__')"` completed for a one-condition circuit smoke sweep and wrote the same summary/config layout used by the DDM path.
+- `python -m py_compile CANN_DDM_model_rate_based.py rate_model_core/accumulator_simulation.py scripts/simulate_psychometric_data.py rate_model_core/__init__.py rate_model_core/ddm.py` passed after the runtime-fix implementation.
+- Fixed-seed comparisons against the pre-optimization saved circuit smoke results preserved `choice`, `hit_boundary`, and `rt_ms` exactly for both `dur=1000` and `dur=10000`; `final_x` now becomes explicitly absorbing on hit trials by design.
+- On the `coherence=0`, `dt_ddm=5 ms`, `dt_model=1 ms`, `num_trials=10` circuit smoke benchmark:
+  - old `dur=10000` path: `elapsed_s ≈ 136`
+  - new early-stop path: `elapsed_s ≈ 70`
+- On the already-computed one-condition circuit sweep, the new `--resume` path completed in `elapsed_s ≈ 0.267`, confirming that it now avoids both recalibration and recomputation when condition archives already exist.
+
+### Known Issues
+- The new pure-DDM notebook currently only generates the DDM curve; circuit-vs-DDM comparison still needs a follow-up implementation pass.
+- The coherence-to-drift mapping remains an external figure-layer decision rather than a model-layer invariant.
+
+### Checkpoint
+- The repository now has a shared task-level accumulator result format used by both pure DDM simulations and saved circuit-condition runs, plus a script entrypoint for generating calibrated circuit-condition archives for later notebook analysis.
+
+## 2026-03-19
+
+### Completed
+- Added an opt-in robust `W_EB` mode, `eb_kernel_mode='smoothed_derivative'`, in `rate_model_core/connectivity.py`.
+- Implemented the new mode as a reflected-boundary derivative-of-Gaussian style operator with zero discrete sum and normalized first moment so it remains derivative-like on clean edges while suppressing short-wavelength jitter in `r_E`.
+- Added `scripts/check_eb_kernel_robustness.py` to compare clean-edge fidelity and jitter rejection between the legacy `simple` operator and the new robust operator.
+- Added an opt-in severe-instability fallback, `eb_kernel_mode='edge_readout_bump'`, in `CANN_DDM_model_rate_based.py`.
+- Implemented `edge_readout_bump` as a readout-and-reconstruct path: infer `theta_E` from the current edge state, then generate a canonical bump centered at that `theta_E` and scaled to the clean-edge `simple` operator peak.
+- Added `scripts/check_eb_instability_sample.py` to evaluate `simple`, `smoothed_derivative`, and `edge_readout_bump` directly on `figures_code/supp/r_E_instability.npy`.
+- Updated `docs/CODE_UNDERSTANDING.md` and `docs/STATES.md` to record the new `W_EB` option and its intended use.
+
+### Validation
+- `python -m py_compile rate_model_core/connectivity.py scripts/check_eb_kernel_robustness.py` passed after the `W_EB` update.
+- `python -m py_compile CANN_DDM_model_rate_based.py rate_model_core/config.py rate_model_core/default_params.py` still passed after wiring in the new mode.
+- `conda run -n cann_ddm_v2 python -c "import runpy; runpy.run_path('scripts/check_eb_kernel_robustness.py', run_name='__main__')"` passed with the new `smoothed_derivative` operator.
+- In a quick no-cue noisy comparison using the stable default parameter block with `noise_scale_edge=0.02`, the offline `W_EB r_E` readout under `smoothed_derivative` had lower mean spatial total variation and lower second-difference roughness than `simple` while keeping `hit_boundary=False` in both runs.
+- On the saved failure sample `figures_code/supp/r_E_instability.npy`, `edge_readout_bump` produced a single-peaked smooth bump centered at the live edge readout (`theta_E ≈ 1.328`) with much lower roughness than `simple`:
+  - `simple`: `tv ≈ 32.02`, `hf ≈ 38.96`, `local_peaks = 32`
+  - `edge_readout_bump`: `tv ≈ 1.24`, `hf ≈ 0.12`, `local_peaks = 1`
+
+### Known Issues
+- `smoothed_derivative` is intentionally opt-in and is not yet the repository default; figure notebooks and calibration workflows still need explicit retuning if they want to use it.
+- The current robustness check is static and operator-level; it does not yet certify every full closed-loop noisy regime.
+- `edge_readout_bump` intentionally projects away edge-shape deviations, so it trades local profile fidelity for position-level robustness.
+
+### Checkpoint
+- The codebase now has a dedicated jitter-resistant `I_EB` path that preserves the legacy `simple` operator for exact backward compatibility.
+- The codebase also now has a position-readout fallback for severe edge-profile instability where direct differentiation of `r_E` is no longer trustworthy.
+
 ## 2026-03-09
 
 ### Completed

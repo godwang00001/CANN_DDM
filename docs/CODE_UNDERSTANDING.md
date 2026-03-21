@@ -120,6 +120,30 @@ There is also an exploratory smooth option:
 
 which builds a short-range antisymmetric kernel with vanishing discrete zeroth moment.
 
+There is now also a robust filtered-derivative option:
+
+- `eb_kernel_mode='smoothed_derivative'`
+
+which builds an antisymmetric derivative-of-Gaussian style kernel with:
+
+- exact vanishing discrete zeroth moment
+- normalized first moment
+- reflected-boundary matrix construction
+
+My current understanding is that this mode is the intended jitter-resistant `I_EB` path: it preserves the edge-centered bump readout for clean translated edges more faithfully than an arbitrary smooth kernel, while attenuating short-wavelength noise in `r_E` before it reaches the bump population.
+
+There is also now a readout-and-reconstruct option:
+
+- `eb_kernel_mode='edge_readout_bump'`
+
+This mode does not differentiate the live edge profile at all. Instead it:
+
+- reads out the current edge position `theta_E` from `r_E`
+- constructs a canonical bump centered at that `theta_E`
+- scales the bump to match the current clean-edge `simple`-operator peak
+
+My current understanding is that this is the most robust `I_EB` option when the live edge profile itself becomes locally unstable, because it projects the noisy edge activity onto the low-dimensional edge-position manifold before generating the bump-shaped drive.
+
 ### `W_BE`
 `I_BE` is also now defined as an explicit kernel operator:
 
@@ -172,6 +196,110 @@ Pure geometry and utility helpers now live in `rate_model_core/utils.py`:
 - `get_RT()`
 
 So the main model file is now more focused on state initialization, coupling, and runtime dynamics.
+
+The model file now also exposes a reusable runner builder:
+
+- `build_runner()`
+
+My current understanding is that this exists so task-level code can drive the same circuit trial in chunks, inspect `hit_boundary`, and stop early without rebuilding the full BrainPy runner every time.
+
+There is now also a shared task-level accumulator helper in:
+
+- `rate_model_core/accumulator_simulation.py`
+
+My current understanding is that this module is meant to keep task-level Monte Carlo simulations and shared result serialization separate from the neural circuit implementation in `CANN_DDM_model_rate_based.py`. It uses the same continuous-task timing convention as the model:
+
+- integer-millisecond `dt_DDM`
+- pre-stimulus hold at `x0` until `t_start`
+- absorbed boundaries at `0` and `boundary`
+- returned RT measured relative to `t_start` in milliseconds
+
+The new helper is the clean path for pure DDM psychometric and RT analyses, and it now also defines the shared result shape and reusable circuit-condition simulation path used before those task-level statistics are compared to the full circuit. The intended public entrypoints are now:
+
+- `simulate_ddm_trials()`
+- `simulate_circuit_trials()`
+
+Both return the same `AccumulatorSimulationResult` object. Calibration details needed for the circuit path are stored in `result.metadata` rather than returned as a second object.
+
+The circuit path now has two important runtime optimizations:
+
+- optional sweep-level calibration reuse through a provided calibration object
+- chunked early-stop execution for circuit trials
+
+The early-stop path is task-level, not model-level: the circuit still evolves exactly as before until the first detected boundary hit, but the shared simulator stops advancing the runner after that point and treats the saved task-level trajectory as absorbing for storage purposes.
+
+At the script layer, psychometric figure data generation is now separated from notebook plotting through:
+
+- `scripts/simulate_psychometric_data.py`
+
+My current understanding is that this script is the intended batch path for coherence sweeps. It drives either the DDM or circuit simulator over a coherence grid, saves one NPZ archive per coherence condition, and writes a sweep-level `summary.csv` plus `config.json` for later notebook import.
+
+There is now also a higher-level unified psychometric workflow centered on:
+
+- `scripts/submit_circuit_psychometric_scc.sh`
+
+My current understanding is that this shell entrypoint is now the intended public path when a matched DDM-vs-circuit psychometric dataset is needed under one shared task configuration. The workflow is:
+
+1. generate the DDM sweep locally with `scripts/generate_ddm_psychometric_dataset.py`
+2. submit one SCC worker job per circuit coherence
+3. submit a dependent finalizer job
+4. merge the circuit worker outputs
+5. combine the final DDM and circuit sweep outputs into one top-level bundle
+
+The DDM local generator now writes one sweep-level dataset directly:
+
+- `dataset.npz`
+- `summary.csv`
+- `config.json`
+
+and uses the same parameter names and semantics as the circuit sweep:
+
+- `coherence_values`
+- `drift_gain`
+- `noise_scale`
+- `dt_ddm`
+- `dt_model`
+- `t_start`
+- `dur`
+- `x0`
+- `boundary`
+- `num_trials`
+- `seed`
+
+The current combined-model bundler is:
+
+- `scripts/combine_psychometric_model_datasets.py`
+
+My current understanding is that this script is intentionally result-preserving: it does not resimulate anything. It reads the already-generated DDM sweep bundle and the already-finalized circuit sweep bundle, then writes one shared top-level bundle containing both models.
+
+The current combined dataset format is a plain NPZ archive with:
+
+- `model_names`
+- `coherence_values`
+- `choice`
+- `hit_boundary`
+- `rt_ms`
+- `final_x`
+- `time_ms`
+- `metadata_json`
+
+where the main task-level arrays are currently shaped as:
+
+- `choice.shape = (num_models, num_coherences, num_trials)`
+- `hit_boundary.shape = (num_models, num_coherences, num_trials)`
+- `rt_ms.shape = (num_models, num_coherences, num_trials)`
+
+and the shared top-level `summary.csv` contains one row per `(model, coherence)` pair rather than one row per coherence only.
+
+The current notebook-facing model order in the combined dataset is:
+
+- `model_names = ['ddm', 'circuit']`
+
+The current comparison notebook:
+
+- `figures_code/supp/ddm_circuit_psychometric_curve.ipynb`
+
+no longer loads two separate run folders. It now reads one combined run folder, splits the shared bundle by `model_names`, reconstructs the per-model psychometric summaries inside the notebook, and then fits/plots the two curves on shared axes.
 
 The current implementation readout map is now a finite-interval normalized exponential map over the coding window. In other words, the helper pair
 
@@ -271,12 +399,16 @@ The current safe baseline for the coupling operators is:
 - `W_BE`: `simple`
 
 For the edge recurrent operator, the active runtime baseline is now the reflected-boundary `J_EE` builder rather than the old truncated one.
+The new `W_EB='smoothed_derivative'` path is available as an opt-in robust alternative, but the repo still keeps `simple` as the default for exact legacy reproducibility.
+For severe local edge instability, the new `W_EB='edge_readout_bump'` mode is the strongest stabilizing option because it bypasses direct differentiation of the noisy profile.
 
 ## Current Open Questions
 The main code-level questions still open are:
 
 - whether the remaining legacy geometry compatibility path should now be removed
 - whether the smooth `W_EB` and `W_BE` options can be tuned into a stable and theory-faithful regime
+- what the best default `eb_kernel_sigma` / `eb_kernel_gain` pair is for the new `smoothed_derivative` mode across the main figure regimes
+- whether `edge_readout_bump` should remain an opt-in fallback or become the recommended default in high-noise continuous-DDM regimes
 - whether the fixed `J_EE` kernel constants and reflected-boundary rule should stay as implementation constants or be promoted into explicit parameters
 - how much cue-driven and manuscript-facing behavior changes under the reflected-boundary runtime default relative to the old truncated builder
 - how the normalized finite-interval implementation map should ultimately be reconciled with the manuscript's analytic $x(\theta)$ convention

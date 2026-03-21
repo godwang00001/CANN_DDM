@@ -7,7 +7,7 @@ from rate_model_core.math import edge_states, sigmoid
 EDGE_KERNEL_BASE_EXC_SIGMA = 1.0
 EDGE_KERNEL_INHIBITION_WIDTH_RATIO = 1.2
 EDGE_TO_BUMP_KERNEL_MODE = 'simple'
-EDGE_TO_BUMP_KERNEL_SIGMA = 0.5
+EDGE_TO_BUMP_KERNEL_SIGMA = 1.0
 EDGE_TO_BUMP_KERNEL_SHIFT = 1.0
 EDGE_TO_BUMP_KERNEL_GAIN = 100.
 BUMP_TO_EDGE_KERNEL_MODE = 'simple'
@@ -142,6 +142,43 @@ def make_edge_to_bump_kernel(
     return kernel
 
 
+def make_smoothed_derivative_kernel(
+    kernel_sigma=EDGE_TO_BUMP_KERNEL_SIGMA,
+    support_radius=None,
+    normalize_first_moment=True,
+):
+    """
+    Build an antisymmetric derivative-of-Gaussian kernel on the discrete grid.
+
+    This acts like a spatially smoothed derivative: constant offsets vanish
+    exactly, clean translated edges still produce a localized bump-like readout,
+    and short-wavelength jitter is attenuated before it reaches the bump
+    population.
+    """
+    if kernel_sigma <= 0:
+        raise ValueError("kernel_sigma must be positive")
+
+    if support_radius is None:
+        support_radius = max(2, int(float(bm.ceil(4 * kernel_sigma))))
+
+    offsets = bm.arange(-support_radius, support_radius + 1, dtype=float)
+    kernel = -(offsets / (kernel_sigma ** 2)) * bm.exp(
+        -0.5 * (offsets / kernel_sigma) ** 2
+    )
+
+    # Enforce exact odd symmetry after sampling so the discrete zeroth moment
+    # vanishes pairwise on the symmetric support.
+    kernel = 0.5 * (kernel - kernel[::-1])
+
+    if normalize_first_moment:
+        first_moment = bm.sum(offsets * kernel)
+        if bm.abs(first_moment) < 1e-12:
+            raise ValueError("smoothed-derivative kernel first moment vanished after discretization")
+        kernel = kernel / bm.abs(first_moment)
+
+    return kernel
+
+
 def make_edge_to_bump_conn_mat(
     num,
     kernel_mode=EDGE_TO_BUMP_KERNEL_MODE,
@@ -179,12 +216,26 @@ def make_edge_to_bump_conn_mat(
             support_radius=support_radius,
             normalize_first_moment=True,
         )
+        boundary_mode = 'truncate'
+    elif kernel_mode == 'smoothed_derivative':
+        kernel = make_smoothed_derivative_kernel(
+            kernel_sigma=kernel_sigma,
+            support_radius=support_radius,
+            normalize_first_moment=True,
+        )
+        boundary_mode = 'reflect'
     else:
         raise ValueError(
-            f"Unknown eb_kernel_mode '{kernel_mode}'. Supported modes: simple, smooth_asymmetric."
+            "Unknown eb_kernel_mode "
+            f"'{kernel_mode}'. Supported modes: simple, smooth_asymmetric, smoothed_derivative."
         )
 
-    return kernel_gain * make_conn_mat_from_kernel(num, kernel, normed=False)
+    return kernel_gain * make_conn_mat_from_kernel(
+        num,
+        kernel,
+        normed=False,
+        boundary_mode=boundary_mode,
+    )
 
 
 def make_bump_to_edge_kernel(

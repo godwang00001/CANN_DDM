@@ -13,7 +13,7 @@ class EdgePopConfig:
     clamp_frac_E: float = 0.15
     edge_type: str = 'Laplace'
     c_EB: float = 1.
-    offset: float = 0.0029
+    offset: float = 0.0
     eb_kernel_mode: str = 'simple'
     eb_kernel_sigma: float = 1.0
     eb_kernel_shift: float = 1.0
