@@ -1,0 +1,13 @@
+{
+  "description": "Fig4 dv receptive fields configuration.",
+  "edge_pop": {
+    "tau_E": 0.3,
+    "c_EB": 0.2
+  },
+  "bump_pop": {
+    "sigma_B": 0.08
+  },
+  "c_be_sweep": [-0.01, 0.0, 0.01],
+  "selected_neuron_start": 452,
+  "selected_neuron_stop_exclusive": 572
+}

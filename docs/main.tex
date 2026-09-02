@@ -1,0 +1,535 @@
+% !TEX root = main.tex
+\documentclass{article}
+
+% Language setting
+% Replace `english' with e.g. `spanish' to change the document language
+\usepackage[english]{babel}
+\usepackage{float}
+\usepackage{svg}
+% Set page size and margins
+% Replace `letterpaper' with `a4paper' for UK/EU standard size
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+% Useful packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+\newcommand{\MD}{\text{MD}}
+\newcommand{\rt}{\mathbf{r}_{\text{target}}}
+\newcommand{\rB}{r_{\text{B}}}
+\newcommand{\rE}{r_{\text{E}}}
+\newcommand{\rhoE}{\rho_{\text{E}}}
+\newcommand{\rhoB}{\rho_{\text{B}}}
+\newcommand{\tauB}{\tau_{\text{B}}}
+\newcommand{\tauE}{\tau_{\text{E}}}
+\newcommand{\WBB}{W_{\text{BB}}}
+\newcommand{\WEE}{W_{\text{EE}}}
+\newcommand{\kB}{k_{\text{B}}}
+\newcommand{\kE}{k_{\text{E}}}
+\newcommand{\FB}{F_{\text{B}}}
+\newcommand{\FE}{F_{\text{E}}}
+\newcommand{\phiB}{\phi_{\text{B}}}
+\newcommand{\phiE}{\phi_{\text{E}}}
+\newcommand{\alphaB}{\alpha_{\text{B}}}
+\newcommand{\alphaE}{\alpha_{\text{E}}}
+\newcommand{\betaB}{\beta_{\text{B}}}
+\newcommand{\betaE}{\beta_{\text{E}}}
+\newcommand{\IBE}{I_{\text{BE}}}
+\newcommand{\IEB}{I_{\text{EB}}}
+\newcommand{\cBE}{c_{\text{BE}}}
+\newcommand{\cEB}{c_{\text{EB}}}
+\newcommand{\fB}{f_{\text{B}}}
+\newcommand{\fE}{f_{\text{E}}}
+\newcommand{\neuralspace}{[-\frac\pi2,\frac\pi2]}
+\newcommand{\deltaR}{\delta_{\text{right}}}
+\newcommand{\deltaL}{\delta_{\text{left}}}
+\newcommand{\lambdaE}{\lambda_{\text{E}}}
+\newcommand{\thetah}{\hat{\theta}}
+\newcommand{\WBE}{W_{\text{BE}}}
+\newcommand{\WEB}{W_{\text{EB}}}
+\newcommand{\gammaSig}{\gamma'}
+
+
+\title{Continuous attractor circuits for decision making with
+Laplaced-coded neural tunings}
+\author{Chenyu Wang, Cao Rui, Marc W. Howard}
+\setcounter{secnumdepth}{0}
+\begin{document}
+\maketitle
+
+%% updates 4:29
+
+%% read some papers from Anne Churchland; Anne Urai; Tatiana Engel; 
+%% section: intro
+%% 1. mathematical behavioral model for evidence accmuluation
+%% 2. Neural evidence in decision making tasks
+%% 3. Laplace Neural manifold
+
+%% section: results
+%% 1. heatmaps showing the edge/bump dynamics
+%% 2. QQ plot showing neural circuit model maps precisely onto DDM 
+%% 3. theoretical prediction for the speed of the edge/bump
+%% 4. Illustration of the neural cuircuit model
+
+
+
+
+%% section; methods
+%% 1. formal description of variants evidence accumulation models (collapsing bounds, race model etc.)
+%% 2. 
+
+
+
+\section{Introduction}
+% paragraph 1: diffusion model for evidence accumulation
+% paragraph 2: neural evidence of evidence accumulation
+% paragraph 3: cite fig1B and cite more papers that introduces models
+% paragraph 4: Laplace neural manifold of receptive fields (exponential and sequential receptive fields for time cells / temporal context cells) (refer to other papers)
+% paragraph 5: Daniel & Marc model (edge-bump attractor)
+% paragraph 6: 
+\section{Results}
+
+
+\subsection{Population geometries of ramping and sequential neurons}
+\begin{figure}[t]
+    \vspace*{-1.2cm}
+    \centering
+    \makebox[\linewidth]{\includegraphics[width=1.08\linewidth,trim=0 2.5cm 0 0,clip]{figures/fig1.pdf}}
+    \setlength{\abovecaptionskip}{2pt}%
+    \setlength{\belowcaptionskip}{0pt}%
+        \caption{\textbf{Geometric population representations of a decision variable.}
+    \textbf{(A)} Schematic of a classical drift--diffusion process in which a one-dimensional decision variable $x(t)$ evolves stochastically between symmetric absorbing boundaries corresponding to left ($x=1$) and right ($x=0$) choices.
+    \textbf{(B)} High-dimensional neural responses evolve along a low-dimensional manifold that encodes the decision variable, yielding a compact population-level representation of evidence accumulation.
+    \textbf{(C)} Construction of ramping (edge) and sequential (bump) populatPion geometries in neural space.
+    Neurons are embedded in a one-dimensional coordinate $\theta$ (left), with individual tuning functions defined over the decision variable $x$ (middle).
+    Ramping neurons are modeled with exponential tuning functions whose ramping constants depend systematically on their coordinates in neural space (see \eqref{geometric progression}), whereas sequential neurons exhibit localized tuning.
+    In the continuum limit, these single-neuron tunings give rise to smooth population geometries in neural space (right): an edge-like profile $\rho_E(\theta)$ for ramping neurons and a localized bump $\rho_B(\theta)$ for sequential neurons. The black markers denote the population code $\hat{\theta}$, defined by the edge location or bump center.
+    Accumulation of right evidence corresponds to rigid left-to-right translations of both profiles along $\theta$, shown by progressively darker colors.}
+
+%
+    \label{fig:example_image}
+    \vspace{-0.1\baselineskip}
+\end{figure}
+We consider two populations of decision-related neurons observed in evidence accumulation tasks: a population of ramping neurons and a population of sequentially firing neurons. Each population consists of $N$ right-preferring neurons, embedded in a one-dimensional Euclidean coordinate space, with neuronal coordinates $\theta_i$ independenlambtly and uniformly sampled from a finite interval $C=[\theta_{\min}, \theta_{\max}]$ (Fig. 1C, left). 
+Following previous work,
+%\cite{...} 
+we assume that neurons respond to an internally generated decision variable that implements the cognitive computation of evidence accumulation Specifically, we consider a one-dimensional latent variable $x(t)\in[0,1]$ evolving according to a drift–diffusion process with symmetric absorbing boundaries(Fig. 1A).  Without loss of generality, we associate $x=0$ and $x=1$ with the left and right choices.
+
+ The firing rate of a ramping neuron at coordinate $\theta$ is assumed to depend on the decision variable $x$ through a exponential tuning function
+\begin{equation}
+    f_{\text{E}}^{\theta}(x)=\exp\!\bigl[-\lambdaE(\theta)(1-x)\bigr],
+\end{equation}
+where we define the ramping-rate function $\lambdaE(\theta)$ to vary across coordinates following a geometric progression whose rate is controlled by a parameter $\gamma$,
+\begin{equation}
+   \lambdaE(\theta)=Ae^{\gamma\theta} \label{geometric progression}.
+\end{equation}
+The upper middle of Fig. 1C are examples of these exponential tuning functions with different ramping rates.
+In the continuum neural field limit ($N\to \infty$), the population response of edge neurons can be described by a continuous function of $\theta$,
+\begin{equation}
+\rhoE(\theta|x)=\exp\!\bigl[-A(1-x)e^{\gamma\theta}\bigr].
+\end{equation}
+This double-exponential structure produces an intrinsic edge-like geometry in $\theta$, characterized by a rapid transition from saturation to suppression (Fig. 1C, upper right). Crucially, changes in $x$ do not deform this geometry; instead, they induce a rigid translation of the entire population profile along $\theta$. To make this invariance explicit, we characterize the population profile by the location of its edge, defined as the point at which the response undergoes its most rapid transition from saturation to suppression, $\hat{\theta}(x) :=\arg\max_{\theta}|\frac{\partial}{\partial \theta}\rhoE(\theta|x)|$. This edge location admits a closed-form expression,
+\begin{equation}
+\hat{\theta}(x) = -\frac1\gamma \left[\ln A + \ln(1-x)\right]\label{nonlinear mapping}
+\end{equation}
+revealing that the decision variable is encoded logarithmically as a phase shift of the edge along the $\theta$-manifold. We thereby rewrite $\rhoE$ as:
+
+\begin{equation}
+    \rhoE(\theta|x) = \exp\left[-\lambdaE(\theta-\hat{\theta}(x))\right]. 
+\end{equation}
+For analytical tractability, we approximate this double-exponential edge profile by a logistic sigmoid, which preserves the sharp transition around $\hat{\theta}(x)$ while yielding more convenient analytic expressions (e.g., for derivatives and inverse mappings):
+\begin{equation}
+    \rhoE(\theta|x) \approx \sigma\bigl(\gammaSig(\theta-\hat{\theta}(x))\bigr), \label{rhoE}
+\end{equation}
+where $\sigma(z)=1/(1+e^{-z})$, and we choose $\gammaSig=4\gamma/e$ to match the local slope of the target edge profile (see Appendix). We use this sigmoid approximation in the following analysis.
+
+Sequentially firing neurons form a localized bump of activity at the population level, analogous to canonical continuous attractor representations such as head-direction cells. Crucially, this sequential pattern is also nonlinear: population activity progresses faster as the decision variable approaches commitment, mirroring the same logarithmic warping implied by the ramping population’s dynamics (see \eqref{nonlinear mapping}). We therefore model the population response of bump neurons by a Gaussian function whose center follows the same decision-variable–dependent dynamics as the edge (Fig. 1C, lower right),
+\begin{equation}
+\rhoB(\theta|x)
+= \exp\!\left[-\frac{(\theta-\hat{\theta}(x))^2}{2a^2}\right], \label{rhoB}
+\end{equation}
+At the individual level, the firing rate of a sequentially firing neuron at coordinate $\theta$ is a unimodal function of the decision variable $x$ (lower middle of Fig. 1C).  Denoting the preferred decision value of neuron $\theta$ by $x_{\mathrm{B}}$ (implicitly defined by $\thetah(x_{\mathrm{B}})=\theta$), we can rewrite the single-neuron tuning curve as
+\begin{equation}
+    f_{\text{B}}^{\theta}(x)
+    =
+    \exp\!\left[
+    -\frac{1}{2a^2\gammaSig^2}
+    \left(
+    \ln \frac{1-x}{1-x_{\mathrm{B}}}
+    \right)^2
+    \right].
+\end{equation}
+This form makes explicit that each sequential neuron exhibits a bump-shaped, log-Gaussian tuning curve over $x$, centered at $\hat{x}$.
+
+Together, changes in the decision variable $x$ thus correspond to rigid translations of both ramping (edge) and sequential (bump) population responses along neural space, yielding aligned representations of the same decision variable.
+
+
+\subsection{Rate-based CANN model with edge/bump geometries}
+\begin{figure}[!t]
+    \centering
+    \makebox[\linewidth]{\includegraphics[width=\linewidth,trim=0 2.5cm 0 0,clip]{figures/fig2.pdf}}
+    \setlength{\abovecaptionskip}{2pt}%
+    \setlength{\belowcaptionskip}{0pt}%
+        \caption{\textbf{A coupled edge--bump circuit implements decision-variable updates through evidence-dependent feedback.}
+    \textbf{(A)} Schematic of the recurrent edge and bump populations. Edge cells support an edge-like activity profile through recurrent interactions $\WEE$, with local excitation and global inhibition. The circles are shaded from gray to white to indicate firing rate from high to low, yielding an edge whose position $\theta(t)$ encodes the decision variable. Bump cells support a localized bump attractor through recurrent interactions $\WBB$.
+    \textbf{(B)} Circuit-level architecture of the coupled edge--bump system. The edge population ($E$) and bump population ($B$) are linked by reciprocal interactions $\IEB$ and $\IBE$. Momentary evidence modulates the bump-to-edge interaction $\IBE$, which in turn drives an update of the encoded decision variable.
+    \textbf{(C)} Toy example illustrating the perfect-alignment regime of the coupled bump--edge states. Left: a right cue only, corresponding to input $=1$. Right: a left cue only, corresponding to input $=-1$. In the perfect-alignment regime, the bump tracking dynamics driven by $\IEB$ are sufficiently fast relative to the intrinsic edge dynamics driven by $\IBE$, so that the bump effectively remains aligned with the edge-implied location, forming a perfectly aligned bump--edge configuration. The dynamics therefore proceed through the sequence $\IBE \rightarrow \rE \rightarrow \IEB \rightarrow \rB$: a cue first generates a signed bump-to-edge input $\IBE$, which shifts the edge activity $\rE$ in neural space; the displaced edge then induces an edge-to-bump input $\IEB$; and the bump activity $\rB$ tracks this input while remaining aligned with the edge. Right cues drive a rightward translation of the aligned edge--bump state, whereas left cues drive a leftward translation.}
+
+%
+    \label{fig:example_image}
+\end{figure}
+
+
+Here we construct a circuit-level model whose dynamics are explicitly designed to implement the population geometries described above (Fig.~2A,B).
+
+We model our neural circuit by standard rate-based neurons with recurrent network connectivity and point-wise neural nonlinearity. Consider two interacting neural populations: an edge population, corresponding to ramping neurons, and a bump population, corresponding to sequentially firing neurons. In each population, neurons are embedded in a one-dimensional Euclidean coordinate space, with coordinates $\theta_i$ sampled uniformly from a finite interval. The firing rate of a neuron at coordinate $\theta_i$ is denoted by $\rE(\theta_i)$ or $\rB(\theta_i)$, respectively. For analytical tractability, and to allow synaptic weights and neural activations to be expressed as functions instead of finite-dimensional vectors, we adopt the continuum neural field limit. The recurrent edge and bump architectures are illustrated schematically in Fig.~2A.
+%cite
+The dynamics of network read:
+\begin{equation}
+\begin{aligned}
+\tauE \frac{d\rE(\theta)}{dt}
+&= -\rE(\theta)+\phiE\left[\int_C
+\WEE(\theta,\theta')\rE(\theta')d\theta'+ \IBE(\theta)+I_{\text{clamp}}(\theta)\right] \\[4pt]
+\tauB \frac{d\rB(\theta)}{dt}
+&= -\rB(\theta)+\phiB\left[\int_C \WBB(\theta,\theta')\rB(\theta')d\theta'+ \IEB(\theta)\right]
+\label{neural_dynamics}
+\end{aligned}
+\end{equation}
+where $\phiE$ and $\phiB$ are neural nonlinearities.
+
+Our first goal is to identify interaction weights $\WBB$ and $\WEE$ that support stable bump and edge attractor states given by \eqref{rhoE} and \eqref{rhoB}. The family of such attractor states will form a continuous neural representation of decision variable.
+we assume $\WBB$ and $\WEE$ to be functions of distance between neurons in coordinate space: 
+\begin{equation}
+    \begin{aligned}
+       \WBB(\theta, \theta') &= \kB(\Delta \theta)\\
+    \WEE(\theta, \theta') &= \kE(\Delta \theta), 
+    \end{aligned}
+\end{equation}
+where $\Delta \theta = |\theta-\theta'|$.  To remain consistent with previous work, %cite
+We further assume that $\kB$ and $\kE$ are even kernel functions of distance metric, implementing local excitation and global inhibition. Specifically, we construct $\kE$ using a difference-of-Gaussians kernel and construct $\kB$ using a Gaussian kernel with a uniform inhibitory term. By fine-tuning the kernel parameters we can flexibly match the desired steady-state profiles $\rhoB$ and $\rhoE$ while preserving stability (see methods).
+
+
+
+\subsection{Theory: A Biologically plausible mechanism for decision-variable encoding via CANN}
+We next show that a designed, evidence-dependent modulation of bump–edge feedback ($\IBE$ and $\IEB$) enables the network to implement a one-dimensional decision variable governed by a drift–diffusion process. 
+
+Assume the feedback inputs between edge and bump are defined by the inetraction kernels $\WBE$ and $\WEB$, as illustrated in Fig.~2B,
+
+\begin{equation}
+\begin{aligned}
+    \IBE(\theta) &= \int_C \WBE(\theta,\theta') \rB(\theta),\\
+    \IEB(\theta) &= \int_C \WEB(\theta,\theta') \rE(\theta).
+\end{aligned}
+\end{equation}
+If $\IEB$ is mediated by a short-range interaction kernel, as is standard in neural-field and continuous-attractor models,
+%\citep{WilsonCowan1972,Amari1977,DecoJirsa2008}, 
+the operator $\WEB$ can be approximated locally by a differential operator acting on the edge activity $\rE(\theta)$ (see Appendix). 
+For a spatially localized and approximately balanced kernel with a dominant antisymmetric component, the leading-order contribution reduces to a first spatial derivative. 
+We therefore choose $\WEB$ such that
+
+\begin{equation}
+ \IEB(\theta) \propto \partial_\theta \rE(\theta).
+\end{equation}
+
+Since $\rE(\theta)$ is edge-like, its derivative is a localized bump-shaped profile centered at the edge location. Thus, $\IEB(\theta)$ provides the bump population with a localized external drive whose center is determined by the edge state. A phase offset between the induced input bump and the internal bump state $\rB(\theta)$ generates tracking dynamics that drives the bump toward the input. 
+
+For the bump-to-edge interaction, a centered positive/negative bump input drives the edge rightward/leftward without deforming its geometry (see Appendix). We thereby consider a limiting case of purely local coupling for the bump-to-edge pathway $\WBE(\theta,\theta') = \cBE \delta(\theta-\theta')$ and thus we have
+\begin{equation}
+\IBE(\theta) = \cBE \rB(\theta),
+\end{equation}
+where $\cBE$ controls the bump amplitude.
+
+When the tracking dynamics (modulated by $\IEB$) is sufficiently fast relative to the intrinsic edge dynamics (modulated by $\IBE$), the bump effectively remains aligned with the edge-implied location, forming a perfectly aligned bump--edge configuration. This aligned state serves as the reference attractor for the evidence-dependent modulation introduced next, and a toy example of the resulting aligned dynamics is shown in Fig.~2C.
+
+Now consider a pulse-based drift-diffusion model in which evidence is accumulated per unit of stimulus:
+\begin{equation}
+    dx = v(t)dt + cdW,
+\end{equation}
+where $v(t)=v$ for a right cue, and $v(t)=-v$ for a left cue, and $cdW$ is the Gaussian noise term.  
+With the nonlinear mapping in Eq.~\eqref{nonlinear mapping}, 
+this corresponds to a position-dependent displacement of the edge in neural space,
+\begin{equation}
+    \Delta\theta(\theta)
+    = \begin{cases}
+    \frac{1}{\gammaSig}\ln\!\left(\frac{1}{1-Ave^{\gammaSig\theta}}\right),\quad \text{right cue}\\
+    -\frac{1}{\gammaSig}\ln\!\left(\frac{1}{1-Ave^{\gammaSig\theta}}\right), \quad \text{left cue}.      
+    \end{cases}
+\end{equation}
+In the linear-response regime, the magnitude of the cue-evoked edge displacement is approximately proportional to $\cBE$ (see Appendix for more details),
+\begin{equation}
+    |\Delta\theta| \approx \kappa \cBE,
+\end{equation}
+where $\kappa$ denotes the effective gain relating bump amplitude to edge displacement under a brief cue.
+To implement a constant increment $v$ in decision-variable space, the bump-to-edge coupling should therefore be a function of $ \theta$ and satisfy
+\begin{equation}
+    \cBE(\theta)
+    \approx
+    \frac{1}{\kappa \gammaSig}
+    \ln\!\left(\frac{1}{1-Ave^{\gammaSig\theta}}\right).
+\end{equation}
+For small $v$, this reduces to the approximate scaling
+\begin{equation}
+    \cBE(\theta) \propto e^{\gammaSig\theta}.
+\end{equation}
+Finally, we let the bump-to-edge input be evidence-modulated,
+\begin{equation}
+    \IBE(\theta,t)=
+    v(t)
+    \cBE(\theta)\, \rB(\theta).
+\end{equation}
+By designing $\IEB$ and $\IBE$ so that the dynamics remain within the perfect-alignment regime, evidence-modulated bump-to-edge coupling translates the aligned bump–edge state so that each cue produces the corresponding increment of the decision variable. The aligned bump–edge attractor therefore precisely tracks the decision variable generated by the pulse-based drift–diffusion dynamics.
+% To construct an exact one-to-one correspondence between the pulse-based drift diffusion model and the circuit dynamics, we specify $\cBE$ to be   evidence and position dependent:
+% \begin{equation}
+%     \cBE:=\cBE(\theta, \text{cues}) = (\mathbf{1}_{\text{right}} - \mathbf{1}_{\text{left}}) 
+% \end{equation}
+
+
+\subsection{Model simulations and qualitative comparisons to neural data}
+
+
+
+\newpage
+\section{Methods}
+\subsection{Construction of $\kE$ and $\kB$}
+%Notice that when $x \to 0$, $\hat{\theta}(x)\to -\infty$. 
+%In the following we restrict the representation of decision variable over a finite neural space $\neuralspace$ and set $A = e^{\pi s/2}$ to support $x\in[e^{-s\pi},1]$
+% Consider $N$ neurons equally spaced in an interval $I \supset [-\frac\pi2, \frac\pi2]$. 
+% A neural representation of decision variable specified by \eqref{nonlinear mapping}
+
+We aim to construct $\kE$ and $\kB$ s.t. \eqref{rhoE} and \eqref{rhoB} are the solutions of 
+\begin{equation}
+\begin{aligned}
+    \rE(\theta) &= \phiE\!\left(\int_C \kE(\theta,\theta')\, \rE(\theta')d\theta'\right),\\
+    \rB(\theta) &= \phiB\!\left(\int_C \kB(\theta,\theta')\, \rB(\theta')d\theta'\right)
+\end{aligned}
+\end{equation}
+for $\theta \in \neuralspace$.
+ 
+We start with the kernel $\kE$. The continuous kernel is discretized over $N$ evenly spaced neurons to form a finite recurrent connectivity matrix $W_0$. Because the neural domain is bounded, neurons near the edges experience truncated kernels. To explicitly control these hard-boundary effects, we restrict the effective kernel support according to a parameter $\texttt{clamp\_frac}$, which determines the fraction of neurons treated as boundary-clamped. The neurons not being clamped will be evenly assigned a coordinate $\theta \in \neuralspace$. Assume that recurrent interactions are translation-invariant in the interior and depend only on neuronal distance, so that the connectivity can be written as $\WEE(\theta,\theta') = J\,\kE(\theta'-\theta)$, where $\kE(\Delta)$ is an even kernel. We choose $\kE(\Delta)$ from a difference-of-Gaussians (Mexican-hat) family,
+\begin{equation}
+\kE(\Delta) = G_E(\Delta) - \frac{1}{s}\,G_I(\Delta),
+\end{equation}
+\begin{equation}
+G_E(\Delta) = \frac{1}{\sqrt{2\pi}\sigma_E}
+\exp\!\left(-\frac{\Delta^2}{2\sigma_E^2}\right),
+\qquad
+G_I(\Delta) = \frac{1}{\sqrt{2\pi}\sigma_I}
+\exp\!\left(-\frac{\Delta^2}{2\sigma_I^2}\right),
+\end{equation}
+where $\sigma_I = s\sigma_E$. We restrict $s>1$ to enforce local excitation and distal inhibition.
+
+After discretization and truncation, we normalize each row of the connectivity matrix such that its row sum to 1. This row normalization compensates for the loss of synaptic mass due to kernel truncation near the boundaries. 
+
+Because the desired edge solution $\rhoE$ are sigmoidal, we use the sigmoid nonlinearity $\phiE(x)=\sigma(\alphaE x + \betaE)$ which renders the fixed-point condition analytically tractable:  self-consistency of the fixed point only requires that the recurrent input linearizes the target profile in the interior. note that other choices of neuronal nonlinearities yield qualitatively similar results in numerical simulations (see Appendix). By combining an even kernel with row normalization, the recurrent operator preserves locally linear and thus satisfies this requirement (see Appendix for more details):
+\begin{equation}
+    u_0(\theta):=\int_Ck(\theta'-\theta)\rhoE(\theta')d\theta' \approx A\theta+B \quad\text{for} \ \theta \  \text{near} \ \hat{\theta}
+\end{equation}
+To determine $J$, we numerically perform a local linear approximation of $u_0(\theta)$ in a narrow window around the center of the edge transition and choose 
+\begin{equation}
+J = -\frac{\alphaE}{A},
+\end{equation}
+so that the scaled recurrent input $u(\theta)=J u_0(\theta)$ matches the desired linear drive underlying the target edge in logit space. This calibration ensures approximate self-consistency of the fixed point in the vicinity of the edge, which is the region most sensitive to deviations in position and slope.
+Owing to row normalization, the recurrent input satisfies $u(\theta)\approx J$ in the upper saturated region where $\rhoE\approx 1$, and $u(\theta)\approx 0$ in the lower saturated region where $\rhoE \approx 0$. To center these two regimes around the midpoint of the sigmoid, we set
+\begin{equation}
+\betaE = -\frac{J}{2}.
+\end{equation}
+With this choice, the inputs to the nonlinearity are approximately symmetric about zero in the two saturation limits, which ensures the global consistency of $\rhoE(\theta)$ as a fixed point under hard boundary conditions.
+
+The construction of $\kB$ follows previous work on a solvable bump-shaped CANN.
+%cite
+We used the same parameter $\texttt{clamp\_frac}$ to impose the hard-boundary condition. Different from the construction of $\kE$, we assume $\kB$ to be pure Gaussian
+\begin{equation}
+    \kB(\Delta) = G_E(\Delta),
+\end{equation}
+and introduce the square nonlinearity $\phiB(x) = x^2/C$, where $C$ is a constant. Previous studies have shown that CANNs with Gaussian recurrent kernels and quadratic rate nonlinearities are analytically solvable in the continuum limit.
+%cite
+Under these conditions, the network admits a continuous family of Gaussian-shaped stationary states with a neutrally stable positional mode (See Appendix for more details).
+
+\subsection{}
+
+
+\subsection{Network simulation}
+
+
+\newpage
+\section{Appendix}
+\subsection{Perturbation Analysis}
+Here we derive the stability condition for the edge solution $\rE^*(\theta|\thetah)=\rhoE(\theta|\thetah)$ for every $\thetah\in C$. In what follows, we drop the sub-index $\mathrm{E}$ throughout the proof to simplify notation.
+
+Without loss of generality, we can effectively take $C= (-\infty, \infty)$. Define the translation operator: $(T_\epsilon f)(\theta) = f(\theta-\epsilon)$ and assume $\rE^*(\theta|\thetah)$ is a fixed point of \eqref{neural_dynamics}, then any $\epsilon$-translation of $r^*$ satiesfies
+\begin{equation}
+    \phi(W r^*_\epsilon) = \phi(T_\epsilon(W r^*)) = T_\epsilon(\phi(W r^*)) = T_\epsilon(r^*) = r^*_{\epsilon},
+\end{equation}
+where we use the fact that the translational operator and convolutional operator are commutative. This shows that $\mathcal{M}=\{r^*(\cdot|\thetah), \thetah \in C\}$ form a continuous family of fixed points. We thereby set $\thetah=0$ and drop this notation in what follows. Consider a slight perturtaion around the stationary state $r(\theta,t) = r^*(\theta) + \delta r(\theta, t)$. Using the identity $\sigma'(x)=\sigma(x)(1-\sigma(x))$, we obtain
+\begin{equation}
+    \tau \frac{d}{dt} \delta r(\theta,t) = \int_{\mathbb{R}} F(\theta,\theta')\,\delta r(\theta',t)\,d\theta' - \delta r(\theta,t),
+\end{equation}
+where the interaction kernel is
+\begin{equation}
+F(\theta,\theta')=r^*(\theta)\left(1-r^*(\theta)\right)k(\theta-\theta').
+\end{equation}
+Now we define the linear operator $\mathcal{L}$,
+\begin{equation}
+    \mathcal{L}\,\delta r  = - \delta r + D W\,\delta r,
+\end{equation}
+where
+\begin{equation}
+    (D f)(\theta) = r^*(\theta)\left(1-r^*(\theta)\right)f(\theta), \quad (W f)(\theta) =\int_{-\infty}^{\infty} k(\theta-\theta') f(\theta')d\theta',
+\end{equation}
+and rewrite the system as
+\begin{equation}
+    \tau \frac{d}{dt} \delta r = \mathcal{L}\, \delta r.
+\end{equation}
+Consider the eigenfunction:
+\begin{equation}
+    \mathcal{L}r = \lambda r,
+\end{equation}
+then $\lambda$ follows:
+\begin{equation}
+    \lambda = \frac{\mu-1}{\tau},
+\end{equation} 
+where $\mu$ is the eigenvalues of $D W$.
+
+The existence of a continuous family of fixed points implies that perturbations tangent to this manifold neither grow nor decay. The corresponding eigenfunction $r_0$ that satisfies $\mathcal{L} r_0 = 0$ is given by the derivative of the fixed point with respect to its position parameter, evaluated at $\thetah=0$:
+\begin{equation}
+    r_0(\theta)=\left.\partial_{\thetah} r^*(\theta|\thetah)\right|_{\thetah=0}
+    = -s_{\sigma}\,\sigma\!\bigl(s_{\sigma}\theta\bigr)\,\Bigl[1-\sigma\!\bigl(s_{\sigma}\theta\bigr)\Bigr].
+\end{equation}
+
+It remains to show that all nontrivial eigenvalues of $DW$ lie below $1$.
+Since $k$ is even, $W$ is self-adjoint on $L^2(\mathbb{R})$. The symmetrized operator
+\begin{equation}
+    \mathcal{S}:=D^{1/2}WD^{1/2}
+\end{equation}
+is self-adjoint and similar to $DW$ (hence has the same eigenvalues $\{\mu_k\}$).
+Because $\mathcal{S}$ is Hilbert--Schmidt, its eigenvalues satisfy
+\begin{equation}\label{eq:mu_hs_bound}
+    |\mu_k| \le \sqrt{\|\mathcal{S}\|_{\mathrm{HS}}^2 - 1},\qquad k\ge 1.
+\end{equation}
+Moreover, by Cauchy--Schwarz,
+\begin{equation}
+    \|\mathcal{S}\|_{\mathrm{HS}}^2 \le \|d\|_2^2\,\|k\|_2^2,
+    \qquad d(\theta):=r^*(\theta)\bigl(1-r^*(\theta)\bigr).
+\end{equation}
+For the sigmoid edge $r^*(\theta)=\sigma(s_{\sigma}\theta)$ we can compute $\|d\|_2^2$ explicitly,
+\begin{align}
+    \|d\|_2^2
+    &= \int_{\mathbb{R}} d(\theta)^2\,d\theta\\
+    &= \frac{1}{16}\cdot\frac{2}{s_{\sigma}}\int_{\mathbb{R}} \mathrm{sech}^4(u)\\
+    &= \frac{1}{6s_{\sigma}}.
+\end{align}
+Hence
+\begin{equation}
+    |\mu_k| \le \sqrt{\frac{1}{6s_{\sigma}}\,\|k\|_2^2 - 1},\qquad k\ge 1.
+\end{equation}
+For the difference-of-Gaussians kernel $k(\Delta)=G_E(\Delta)-\frac{\sigma_E}{\sigma_I}G_I(\Delta)$,
+\begin{align}
+    \|k\|_2^2
+    &= \int_{\mathbb{R}} \Bigl(G_E(\Delta)-\tfrac{\sigma_E}{\sigma_I}G_I(\Delta)\Bigr)^2\,d\Delta \nonumber\\
+    &= \int_{\mathbb{R}} G_E(\Delta)^2\,d\Delta
+    + \left(\frac{\sigma_E}{\sigma_I}\right)^2\int_{\mathbb{R}} G_I(\Delta)^2\,d\Delta
+    - 2\frac{\sigma_E}{\sigma_I}\int_{\mathbb{R}} G_E(\Delta)G_I(\Delta)\,d\Delta. \label{eq:k_l2_exact}
+\end{align}
+Using the standard Gaussian identities
+\begin{equation}
+    \int_{\mathbb{R}} G_{\sigma}(\Delta)^2\,d\Delta = \frac{1}{2\sqrt{\pi}\sigma},
+    \qquad
+    \int_{\mathbb{R}} G_{\sigma_1}(\Delta)G_{\sigma_2}(\Delta)\,d\Delta = \frac{1}{\sqrt{2\pi}\sqrt{\sigma_1^2+\sigma_2^2}},
+\end{equation}
+we obtain
+\begin{align}
+    \|k\|_2^2
+    &= \frac{1}{2\sqrt{\pi}\sigma_E}
+    + \left(\frac{\sigma_E}{\sigma_I}\right)^2\cdot\frac{1}{2\sqrt{\pi}\sigma_I}
+    - 2\frac{\sigma_E}{\sigma_I}\cdot\frac{1}{\sqrt{2\pi}\sqrt{\sigma_E^2+\sigma_I^2}}\\
+    &= \frac{1}{2\sqrt{\pi}\sigma_E}\left(1+\frac{\sigma_E^3}{\sigma_I^3}-\frac{2\sqrt{2}\,\sigma_E^2}{\sigma_I\sqrt{\sigma_E^2+\sigma_I^2}}\right).
+\end{align}
+In particular, if the parameters $\sigma_E, \sigma_I$ are chosen s.t. $\|k\|_2^2<12s_{\sigma}$, then $|\mu_k|<1$ for all $k\ge 1$, and therefore the linearized eigenvalues satisfy $\lambda_k=(\mu_k-1)/\tau<0$.
+
+\subsection{Positioal shift}
+We assume the edge population continuously receives a bump-shaped input whose center is locked to the edge center $\hat{\theta}$:
+\begin{equation}
+\IBE(\theta,t)=\cBE \rhoB\!\big(\theta-\hat{\theta}(t)\big),
+\label{eq:IBE}
+\end{equation}
+where $\rhoB(\cdot)$ is a prescribed bump profile (e.g. a Gaussian bump), and $c$ is its strength.
+
+In the weak-input regime, we can reasonably assume that the activity remains close to the edge manifold, thus the network dynamics is dominated by the positional shift of the edge,
+\begin{equation}
+\rE(\theta,t)\approx \rE^*\!\big(\theta-\hat{\theta}(t)\big).
+\label{eq:ansatz}
+\end{equation}
+
+Differentiating \eqref{eq:ansatz} with respect to time yields
+
+
+
+
+\begin{equation}
+\partial_t \rE(\theta,t)
+\approx
+- \dot{\hat{\theta}}(t)\,
+\partial_\theta \rE^*\!\big(\theta-\hat{\theta}(t)\big).
+\label{eq:rt_shift}
+\end{equation}
+
+Linearizing the dynamics around $\rE^*$ and retaining only the forcing induced by the bump input gives, to leading order,
+\begin{equation}
+- \tauE \dot{\hat{\theta}}(t)\,
+\partial_\theta \rE^*\!\big(\theta-\hat{\theta}(t)\big)
+=
+D(\theta-\hat{\theta}(t))\, I_{BE}(\theta,t),
+\label{eq:forced_mode}
+\end{equation}
+where $D(\theta)=\phiE'(\kE * \rE^*)(\theta)$ is the local gain evaluated at the edge profile.
+
+Projecting \eqref{eq:forced_mode} onto the positional-shift mode
+$\partial_\theta \rE^*$ and integrating over $\theta$ yields
+\begin{equation}
+\tauE \dot{\hat{\theta}}(t)
+=
+\frac{
+\displaystyle
+\int
+\partial_\theta \rE^*(\theta-\hat{\theta})
+\, I_{BE}(\theta,t)\, d\theta
+}{
+\displaystyle
+\int
+\frac{
+\big(\partial_\theta \rE^*(\theta)\big)^2
+}{
+D(\theta)
+}\, d\theta
+}.
+\label{eq:theta_general}
+\end{equation}
+
+Substituting the co-moving bump input \eqref{eq:IBE} and using translation invariance,
+\begin{equation}
+\boxed{
+\dot{\hat{\theta}}(t)
+=
+\frac{\cBE}{\tauE}
+\,
+\frac{
+\displaystyle
+\int
+\partial_\theta \rE^*(\theta)\,
+\rhoB(\theta)\, d\theta
+}{
+\displaystyle
+\int
+\frac{
+\big(\partial_\theta \rE^*(\theta)\big)^2
+}{
+D(\theta)
+}\, d\theta
+}.
+}
+\label{eq:speed_c_relation}
+\end{equation}
+
+\end{document}

@@ -1,0 +1,80 @@
+# States
+
+This file records validated long-term project state only.
+
+- The active Git branch for this project is `CANN_DDM_rate_model`.
+- `docs/paper.pdf` is currently the primary theory reference and should be read before making nontrivial model edits.
+- `docs/paper.pdf` should be treated as a mirrored artifact from an external LaTeX manuscript repo, not as the editing source of truth.
+- The default manuscript source repo path for local syncing is `/projectnb/ecog-eeg/cyw6/CANN_DDM_paper`.
+- `./scripts/sync_paper.sh` should be run before theory- or manuscript-grounded tasks when the mirrored PDF may be stale.
+- `docs/THEORY_UNDERSTANDING.md` is the working theory-checkpoint document for the agent's user-confirmed conceptual understanding.
+- `docs/CODE_UNDERSTANDING.md` is the working implementation-checkpoint document for the agent's current understanding of how the model is realized in code.
+- The current theory understanding includes the aligned edge-bump interpretation and explicitly tracks circuit-level noise as an open question.
+- The active public configuration path now uses a shared top-level `geometry` block with `num_units`, `coding_limit`, `coding_frac`, and `clamp_frac`.
+- The support modules now live under `rate_model_core/`:
+  - `rate_model_core/config.py`
+  - `rate_model_core/connectivity.py`
+  - `rate_model_core/math.py`
+  - `rate_model_core/utils.py`
+- `CANN_DDM_model_rate_based.py` remains the main model/dynamics entrypoint used by the notebooks.
+- `CANN_DDM_model_rate_based.py` now exposes `build_runner()` so task-level code can reuse the same BrainPy runner for chunked circuit trials instead of always forcing a one-shot full-duration run.
+- The active decision-task API now separates:
+  - `decision_mode` for evidence type (`continuous` or `discrete`)
+  - `decision_paradigm` for task rule (`free_response` or `interrogation`)
+- The active timing semantics now separate:
+  - `dur` as evidence duration
+  - `max_time` as total trial horizon
+  - default behavior is `decision_paradigm='free_response'` with `max_time = dur`
+- The active runtime `J_EE` builder in `rate_model_core/connectivity.py` now uses reflected boundaries rather than truncation.
+- The trusted current coupling baseline uses explicit kernel operators with:
+  - `W_EB`: `eb_kernel_mode='simple'`
+  - `W_BE`: `be_kernel_mode='simple'`
+- An opt-in robust edge-to-bump operator is also available:
+  - `W_EB`: `eb_kernel_mode='smoothed_derivative'`
+  - derivative-of-Gaussian style kernel
+  - reflected-boundary construction
+  - intended to suppress edge-profile jitter before it reaches the bump population
+- An opt-in severe-instability fallback is also available:
+  - `W_EB`: `eb_kernel_mode='edge_readout_bump'`
+  - read out `theta_E` from the live edge state
+  - reconstruct a canonical bump centered at `theta_E`
+  - scale that bump to the clean-edge `simple`-operator peak
+- `scripts/run_rate_model_smoke.py` is the current deterministic no-cue regression guard for structure-preserving refactors.
+- `scripts/run_rate_model_geometry_regression.py` is the current fixed-seed cue-driven regression guard for checking that the new shared-geometry path reproduces the legacy configuration behavior.
+- `rate_model_core/accumulator_simulation.py` is the current shared task-level accumulator helper for both pure DDM outputs and decoded circuit outputs, including the reusable `simulate_ddm_trials()` and `simulate_circuit_trials()` APIs.
+- `rate_model_core/accumulator_simulation.py` now also exposes the sweep-level `AccumulatorSimulationSweep` save/load helpers used by the psychometric workflow.
+- `rate_model_core/ddm.py` remains as a compatibility wrapper around the shared accumulator module.
+- `figures_code/supp/ddm_circuit_psychometric_curve.ipynb` is the current DDM-vs-circuit psychometric comparison notebook, and it now loads one combined DDM+circuit dataset bundle rather than two separate run folders.
+- `scripts/simulate_psychometric_data_cDDM.py` is the current condition-level continuous-DDM / circuit psychometric data generator.
+- `scripts/simulate_psychometric_data_pDDM.py` is the current condition-level pulse-DDM psychometric data generator.
+- `scripts/generate_cddm_psychometric_dataset.py` is the current sweep-level continuous-DDM generator for local dataset creation.
+- `scripts/generate_pddm_psychometric_dataset.py` is the current sweep-level pulse-DDM generator for local dataset creation.
+- `scripts/generate_fig3_cddm_two_condition_dataset.py` is the current dedicated Figure 3 DDM-only dataset generator for the fixed two-condition macroscopic panel.
+- `scripts/submit_fig3_cddm_two_condition_scc.sh` is the current SCC wrapper for launching that Figure 3 DDM-only dataset job.
+- `scripts/submit_fig3_one_condition_scc.sh` is the intended Figure 3 combined-model wrapper for the current one-condition cDDM/circuit run:
+  - fixed condition: `coherence=0.3`, `drift_gain=1.0`, `noise_scale=0.5`
+  - default `num_trials=3000`
+  - trajectory saving on by default
+  - output layout matches the psychometric merge/finalizer workflow
+- `scripts/submit_circuit_psychometric_scc.sh` is now the active public psychometric-run entrypoint:
+  - generates the DDM sweep locally
+  - submits the circuit sweep to SCC
+  - submits a dependent finalizer job
+  - leaves one top-level `dataset.npz`, `summary.csv`, and `config.json`
+- `scripts/combine_psychometric_model_datasets.py` is the current final bundler that combines the completed DDM and circuit sweep outputs into one shared top-level dataset.
+- `figures_code/main/fig3_ddm_rt_traj_two_condition.ipynb` is the current DDM-only Figure 3 notebook for plotting:
+  - upper correct-trial RT histogram
+  - two example correct trajectories, one per condition
+  - lower error-trial RT histogram
+- The current finished DDM-only Figure 3 run lives under `results/figure3/fig3_cddm_two_condition_n3000/`.
+- The intended Figure 3 combined DDM+circuit run layout now mirrors the psychometric workflow under `results/figure3/<run_name>/`.
+- In the shared accumulator output format, task-level choice is encoded as:
+  - `+1` for upper / right / correct-bound hits
+  - `-1` for lower / left / error-bound hits
+- `rate_model_core/accumulator_simulation.py` still exposes a compatibility alias `simulate_circuit_condition()`, but the active circuit data-generation entrypoint is the sweep script rather than a separate one-condition CLI.
+- `scripts/compare_edge_builder_drift.py` is the current operator-level diagnostic for edge drift, Goldstone-mode residuals, and static readout bias.
+- `scripts/check_eb_kernel_robustness.py` is the current operator-level diagnostic for clean-edge fidelity and high-frequency jitter rejection in `W_EB`.
+- `scripts/check_eb_instability_sample.py` is the current direct diagnostic for `W_EB` behavior on the saved unstable edge sample `figures_code/supp/r_E_instability.npy`.
+- `scripts/study_I_BE_live_bump.py` and `scripts/scan_live_bump_stability.py` are the current exploratory study scripts for coupling-mechanism and stability work.
+- `figures_code/fig2_micro_dyn_scheme.ipynb` has been migrated to the shared `geometry` / `num_units` setup.
+- `figures/figure2/edge_operator_goldstone_projection_reflect.png` records the reflected-vs-truncated edge-operator comparison that motivated the current `J_EE` default.
